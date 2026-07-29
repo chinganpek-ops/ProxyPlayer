@@ -1,0 +1,813 @@
+Архитектурный план v7: оптимизация для длинных файлов (6+ часов)
+Ключевые изменения
+
+Для файлов длительностью 6+ часов текущая архитектура упирается в три узких места:
+
+    Полное построение индекса при старте — даже инкрементальное построение 1200 чанков не решает проблему, т.к. build_audio_tracks обрабатывает все ~3 млн C9-записей
+
+    Линейный поиск по индексу при seek — HybridSeekWorker ищет IDR перебором
+
+    Монолитный ChunkReader — один поток на всё
+
+Предлагаемая архитектура v7
+text
+
+┌─────────────────────────────────────────────────────┐
+│                  PlayerController                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │ LazyIndex│  │SeekEngine│  │  StreamScheduler  │  │
+│  │ (оконный)│  │(двоичный │  │ (приоритеты,     │  │
+│  │          │  │ поиск)   │  │  предзагрузка)    │  │
+│  └──────────┘  └──────────┘  └──────────────────┘  │
+│                                                     │
+│  ┌──────────────────────────────────────────────┐   │
+│  │              ChunkPipeline                    │   │
+│  │  Reader → Demuxer → VideoDecoder → Buffer    │   │
+│  │                   → AudioDecoder → Buffer    │   │
+│  │  (3stage pipeline, очереди между этапами)    │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+
+Компоненты для реализации
+
+1. LazyIndex — оконный индекс
+
+    При старте строим только окно ±5 минут вокруг текущей позиции
+
+    Остальной индекс остаётся в mmap, читается по требованию
+
+    IndexWindow класс: хранит video_records[start:end], audio_tracks для того же диапазона
+
+    При перемещении за границы окна — асинхронно расширяет/перестраивает окно
+
+    Математика: окно размером 5 минут = 7500 кадров = 625 чанков = ~150 000 C9-записей (вместо 3 млн)
+
+2. SeekEngine — двоичный поиск по mmap
+
+    Вместо линейного перебора idr_frames используем np.searchsorted на всём video_records
+
+    IDR-карта строится лениво: проверка первых N кандидатов, экстраполяция шага
+
+    seek_absolute(frame_idx):
+
+        Бинарный поиск ближайшего IDR в video_records
+
+        Если IDR вне текущего окна — быстрое перестроение окна
+
+        HybridSeekWorker только для декодирования
+
+3. ChunkPipeline — трёхэтапный конвейер
+
+    Этап 1 (Reader): читает сырые данные чанка, кладёт в очередь raw_queue
+
+    Этап 2 (Demuxer): извлекает видео/аудио пакеты, кладёт в video_packets, audio_packets
+
+    Этап 3 (Decoders): отдельные потоки для видео и аудио, забирают из очередей
+
+    Очереди ограничены по размеру (3–5 элементов), при переполнении Reader ждёт
+
+text
+
+Reader ──→ raw_queue (max 3) ──→ Demuxer ──→ video_packets (max 5) ──→ VideoDecoder
+                                         └─→ audio_packets (max 5) ──→ AudioDecoder
+
+4. StreamScheduler — приоритетная загрузка
+
+    При нормальном воспроизведении: загружает чанки вперёд на 10 секунд
+
+    При seek: немедленно загружает целевой чанк, затем окрестности
+
+    При JKL-перемотке: загружает каждый N-й чанк (в зависимости от скорости)
+
+    При паузе: заполняет буфер вперёд на 30 секунд
+
+5. Асинхронный SeekEngine (отмена предыдущего)
+
+    SeekEngine работает в отдельном потоке
+
+    При новом seek старый отменяется через threading.Event
+
+    Результат возвращается через callback/сигнал
+
+Математические оптимизации
+
+Индексный поиск за O(log n):
+text
+
+idr_pos = np.searchsorted(idr_frames, target_frame, side='right') - 1
+
+Предсказание окна для JKL:
+text
+
+window_center = current_frame + direction * speed * lookahead_seconds * fps
+window_half = max(5_minutes, speed * 30_seconds) * fps
+
+Адаптивный размер чанка:
+text
+
+if speed == 1.0: chunk_size = 12 frames
+elif speed <= 4.0: chunk_size = 24 frames
+else: chunk_size = 48 frames  # меньше чтений при быстрой перемотке
+
+План миграции (без нарушения работы v6)
+
+    Шаг 1: LazyIndex — выделить из moov_builder логику оконного индекса
+
+    Шаг 2: ChunkPipeline — рефакторинг ChunkReader в три этапа
+
+    Шаг 3: SeekEngine — замена синхронного HybridSeekWorker на асинхронный с отменой
+
+    Шаг 4: StreamScheduler — замена простого цикла загрузки на приоритетный планировщик
+
+    Шаг 5: Интеграция, тестирование на 6-часовых файлах
+
+Ожидаемые результаты
+Метрика	v6 (текущая)	v7 (целевая)
+Время до первого кадра (6-ч файл)	5–15 сек	1–2 сек
+Память (индекс 6-ч файла)	~800 МБ	~50 МБ (окно)
+Задержка seek (дальний переход)	1–3 сек	0.3–0.5 сек
+JKL-перемотка x8	рывками	плавно
+CPU при простое	5–10%	2–3%
+
+Готов начать с реализации LazyIndex — это даст наибольший прирост для длинных файлов. Согласовать?
+Опиши архитектурные изменения по модульно, я бы внедрил api
+Архитектурные изменения v7 — модульный план с API
+Модуль 1: lazy_index.py
+
+Назначение: Оконный доступ к индексу без полной загрузки в память
+
+API:
+python
+
+class LazyIndex:
+    def __init__(self, mirror_path: Path, mp4_path: Path)
+    
+    # Открывает окно вокруг указанного кадра
+    def open_window(self, center_frame: int, window_seconds: float = 300.0) -> IndexWindow
+    
+    # Расширяет окно в указанном направлении
+    def expand_window(self, direction: str, frames: int) -> IndexWindow
+    
+    # Перемещает окно к новому центру (асинхронно)
+    def move_window_async(self, center_frame: int, callback: Callable[[IndexWindow], None])
+    
+    # Освобождает ресурсы
+    def close()
+
+class IndexWindow:
+    video_records: np.ndarray       # DTYPE_193, только в окне
+    audio_tracks: np.ndarray        # DTYPE_AUDIO, только в окне
+    chunk_offsets: np.ndarray       # int64, только для окна
+    chunk_sizes: np.ndarray
+    audio_chunks: List[Dict]
+    window_start_frame: int
+    window_end_frame: int
+    idr_frames: np.ndarray          # IDR в пределах окна
+    
+    # Проверяет, попадает ли кадр в текущее окно
+    def contains_frame(self, frame_idx: int) -> bool
+    
+    # Возвращает границы окна в чанках
+    def chunk_range(self) -> Tuple[int, int]
+
+Внутреннее устройство:
+
+    При создании окна: np.searchsorted по mmap для быстрого нахождения границ
+
+    video_records[start:end] загружается из mmap
+
+    audio_tracks строятся только для нужного диапазона через build_audio_tracks с предварительной фильтрацией C9-записей по PTS
+
+    Размер окна по умолчанию: 5 минут = 300 секунд = 7500 кадров = 625 чанков
+
+Модуль 2: seek_engine.py
+
+Назначение: Асинхронный seek с отменой и двоичным поиском
+
+API:
+python
+
+class SeekEngine:
+    def __init__(self, lazy_index: LazyIndex, decoder: Decoder, 
+                 seek_reader: WinSequentialReader)
+    
+    # Асинхронный seek (возвращает управление сразу)
+    def seek_async(self, frame_idx: int, 
+                   on_complete: Callable[[FrameRingBuffer], None],
+                   on_error: Callable[[str], None]) -> SeekRequest
+    
+    # Отмена текущего seek
+    def cancel_current()
+    
+    # Синхронный seek (для совместимости)
+    def seek_sync(self, frame_idx: int) -> FrameRingBuffer
+
+class SeekRequest:
+    frame_idx: int
+    is_cancelled: threading.Event
+    
+    def cancel()
+    def wait(timeout: float) -> bool
+
+Внутреннее устройство:
+
+    Поиск IDR: np.searchsorted(idr_frames, frame_idx, side='right') - 1
+
+    Если IDR вне окна → lazy_index.move_window_async()
+
+    Декодирование: от IDR до max(IDR + 12, target + 12) кадров
+
+    При отмене: is_cancelled.set(), проверка в цикле декодирования
+
+    Результат: заполненный FrameRingBuffer (фоновый)
+
+Модуль 3: chunk_pipeline.py
+
+Назначение: Трёхэтапный конвейер обработки чанков
+
+API:
+python
+
+class ChunkPipeline:
+    def __init__(self, mp4_path: Path, video_decoder: Decoder, 
+                 audio_decoders: List[AudioDecoder],
+                 video_buffer: FrameRingBuffer,
+                 audio_buffers: MultiTrackAudioBuffer)
+    
+    # Запуск/остановка конвейера
+    def start(start_chunk: int)
+    def stop()
+    def pause()
+    def resume()
+    
+    # Обновление данных индекса
+    def update_index(window: IndexWindow)
+    
+    # Приоритетная загрузка
+    def prioritize_chunk(chunk_idx: int)
+    
+    # Состояние конвейера
+    @property
+    def raw_queue_size() -> int
+    @property
+    def video_packets_pending() -> int
+    @property
+    def audio_packets_pending() -> int
+
+class Stage:
+    """Базовый класс для этапа конвейера"""
+    input_queue: queue.Queue
+    output_queues: List[queue.Queue]
+    thread: threading.Thread
+    stop_event: threading.Event
+    
+    def run()  # переопределяется в наследниках
+
+class ReaderStage(Stage):
+    """Этап 1: чтение сырых данных"""
+    def run():
+        while not stop_event:
+            chunk = scheduler.get_next_chunk()
+            raw_data = reader.read_sequential(chunk.offset, chunk.size)
+            output_queue.put((chunk, raw_data))
+
+class DemuxerStage(Stage):
+    """Этап 2: разделение на видео/аудио пакеты"""
+    def run():
+        while not stop_event:
+            chunk, raw_data = input_queue.get()
+            video_packets, audio_packets = demux(chunk, raw_data)
+            video_queue.put(video_packets)
+            audio_queue.put(audio_packets)
+
+class VideoDecoderStage(Stage):
+    """Этап 3a: декодирование видео"""
+    def run():
+        while not stop_event:
+            packets = input_queue.get()
+            for pkt in packets:
+                frames = decoder.decode_sample(pkt)
+                for frame in frames:
+                    video_buffer.try_push(frame, pts)
+
+class AudioDecoderStage(Stage):
+    """Этап 3b: декодирование аудио"""
+    def run():
+        while not stop_event:
+            packets = input_queue.get()
+            for pkt in packets:
+                pcm = audio_decoder.decode(pkt.data)
+                audio_buffers.try_write(pkt.track, pcm, pkt.pts)
+
+Очереди между этапами:
+python
+
+raw_queue = Queue(maxsize=3)        # Reader → Demuxer
+video_queue = Queue(maxsize=5)      # Demuxer → VideoDecoder
+audio_queue = Queue(maxsize=5)      # Demuxer → AudioDecoder
+
+Модуль 4: stream_scheduler.py
+
+Назначение: Приоритетное планирование загрузки чанков
+
+API:
+python
+
+class StreamScheduler:
+    def __init__(self, pipeline: ChunkPipeline, index_window: IndexWindow)
+    
+    # Основной режим: загрузка вперёд
+    def set_normal_mode(current_chunk: int)
+    
+    # Режим seek: приоритет целевому чанку
+    def set_seek_mode(target_chunk: int)
+    
+    # Режим JKL: загрузка каждого N-го чанка
+    def set_fast_forward_mode(direction: int, speed: float)
+    
+    # Режим паузы: заполнение буфера
+    def set_pause_mode(current_chunk: int)
+    
+    # Получить следующий чанк для загрузки
+    def get_next_chunk() -> Optional[int]
+    
+    # Статистика
+    @property
+    def pending_chunks() -> List[int]
+    @property
+    def loaded_chunks() -> Set[int]
+
+Внутренняя логика:
+
+    Нормальный режим: последовательная загрузка вперёд на lookahead = 10 сек / длительность чанка чанков
+
+    Режим seek: целевой чанк → соседние (±2) → дальнейшие
+
+    Режим JKL: stride = max(1, int(speed)), загружается каждый stride-й чанк
+
+    Режим паузы: заполнение до buffer_size - free_slots_required
+
+Модуль 5: adaptive_chunk.py
+
+Назначение: Адаптивный размер чанка в зависимости от скорости
+
+API:
+python
+
+class AdaptiveChunkStrategy:
+    def __init__(self, base_frames_per_chunk: int = 12)
+    
+    # Определяет размер чанка для текущей скорости
+    def get_chunk_size(speed: float) -> int
+    
+    # Определяет шаг для JKL-перемотки
+    def get_fast_forward_stride(speed: float) -> int
+
+# Формулы:
+# speed = 1.0 → chunk_size = 12, stride = 1
+# speed ≤ 4.0 → chunk_size = 24, stride = 4
+# speed > 4.0 → chunk_size = 48, stride = 8
+
+Изменения в существующих модулях
+
+player_controller.py:
+
+    Замена chunk_reader на chunk_pipeline
+
+    Замена HybridSeekWorker на seek_engine.seek_async
+
+    Замена прямого доступа к video_records, chunk_offsets на lazy_index.open_window()
+
+    Добавление stream_scheduler для управления режимами загрузки
+
+chunk_reader.py: → удаляется, заменяется на chunk_pipeline.py
+
+hybrid_seek.py: → удаляется, заменяется на seek_engine.py
+
+moov_builder.py:
+
+    Функции build_audio_tracks, get_chunks остаются
+
+    Добавляются: build_audio_tracks_range(c9_records, start_pts, end_pts), get_chunks_range(video_records, start_chunk, end_chunk)
+
+player_window.py:
+
+    Без значительных изменений (API контроллера сохраняется)
+
+Порядок внедрения
+Этап	Модуль	Зависимости	Риски
+1	lazy_index.py	moov_builder, idx_cache	Низкие — изолированный модуль
+2	adaptive_chunk.py	Нет	Низкие — чистые функции
+3	stream_scheduler.py	adaptive_chunk	Средние — требует тестов на переключение режимов
+4	chunk_pipeline.py	stream_scheduler	Высокие — замена chunk_reader
+5	seek_engine.py	lazy_index	Средние — замена hybrid_seek
+6	Интеграция в player_controller	Все модули	Высокие — полная замена логики
+
+Начинаем с lazy_index.py — он самый независимый и даст наибольший эффект для длинных файлов. Готов предоставить полный код модуля?
+Так же бы я в этой версии начал реализовывать вычищение старых методов и переписал , полный рефакторинг
+Полный рефакторинг v7 — что удалить, что переписать, что добавить
+Файлы, которые удаляются полностью
+Файл	Причина	Замена
+chunk_reader.py	Монолитный, смешивает чтение/демукс/декодинг	chunk_pipeline.py
+hybrid_seek.py	Синхронный, без отмены	seek_engine.py
+loader.py	Устарел ещё в v5, не используется	—
+Файлы, которые полностью переписываются
+Файл	Причина	Что изменится
+player_controller.py	2000+ строк, смесь логики	Разделение на StreamController, PlaybackEngine, SyncManager
+moov_builder.py	Функции работают со всем индексом	Добавление range-функций, удаление дублирующих
+Файлы, которые рефакторятся (частичные изменения)
+Файл	Причина	Что изменится
+decoder.py	Убрать decode_sample_with_pts (нерабочий)	Оставить только decode_sample
+audio_decoder.py	Убрать неиспользуемые поля	Оставить минимальный API
+frame_buffer.py	OK, но добавить find_nearest	Новый метод для поиска кадра по PTS
+audio_buffer.py	OK	Без изменений
+audio_output.py	OK	Без изменений
+player_window.py	Убрать дублирование логики	Вынести клавиатурные обработчики в миксин
+idx_cache.py	Упростить, убрать PID-изоляцию	Единое зеркало (уже сделано)
+win_sequential_reader.py	OK	Без изменений
+video_widget.py	OK	Без изменений
+controls.py	OK	Без изменений
+Новые файлы
+Файл	Назначение
+lazy_index.py	Оконный доступ к индексу
+seek_engine.py	Асинхронный seek с отменой
+chunk_pipeline.py	Трёхэтапный конвейер
+stream_scheduler.py	Приоритетная загрузка
+adaptive_chunk.py	Адаптивный размер чанка
+stream_controller.py	Управление потоком данных (выделено из player_controller)
+playback_engine.py	Логика воспроизведения (выделено из player_controller)
+sync_manager.py	Синхронизация аудио/видео (выделено из player_controller)
+keyboard_mixin.py	Обработка горячих клавиш (выделено из player_window)
+Целевая структура v7
+text
+
+dalet_player/
+├── main.py                    # точка входа
+├── player_window.py           # GUI (упрощён)
+│
+├── core/
+│   ├── stream_controller.py  # управление потоком данных
+│   ├── playback_engine.py    # логика воспроизведения
+│   ├── sync_manager.py       # синхронизация A/V
+│   └── keyboard_mixin.py     # горячие клавиши
+│
+├── pipeline/
+│   ├── chunk_pipeline.py     # трёхэтапный конвейер
+│   ├── stream_scheduler.py   # приоритетная загрузка
+│   └── adaptive_chunk.py     # адаптивный размер чанка
+│
+├── index/
+│   ├── lazy_index.py         # оконный индекс
+│   ├── moov_builder.py       # парсинг .idx (обновлён)
+│   └── idx_cache.py          # кэширование .idx
+│
+├── seek/
+│   └── seek_engine.py        # асинхронный seek
+│
+├── decode/
+│   ├── decoder.py            # H.264 (очищен)
+│   └── audio_decoder.py      # AAC (очищен)
+│
+├── buffer/
+│   ├── frame_buffer.py       # видео-буфер
+│   └── audio_buffer.py       # аудио-буфер
+│
+├── output/
+│   ├── audio_output.py       # вывод звука
+│   └── video_widget.py       # отображение видео
+│
+├── io/
+│   ├── win_sequential_reader.py
+│   └── ref_parser.py
+│
+├── config/
+│   ├── config.py
+│   ├── settings_dialog.py
+│   └── timebase.py
+│
+├── utils/
+│   ├── logger.py
+│   ├── utils.py
+│   └── tcd_parser.py
+│
+└── ui/
+    ├── controls.py
+    └── log_window.py
+
+Матрица зависимостей (сверху вниз)
+text
+
+timebase, utils, logger         ← без зависимостей
+    ↓
+adaptive_chunk                  ← timebase
+    ↓
+frame_buffer, audio_buffer      ← без зависимостей
+    ↓
+decoder, audio_decoder          ← без зависимостей (кроме av, numpy)
+    ↓
+win_sequential_reader           ← без зависимостей (только win api)
+    ↓
+idx_cache                       ← win_sequential_reader
+    ↓
+moov_builder                    ← numpy
+    ↓
+lazy_index                      ← moov_builder, idx_cache
+    ↓
+seek_engine                     ← lazy_index, decoder
+    ↓
+stream_scheduler                ← adaptive_chunk
+    ↓
+chunk_pipeline                  ← stream_scheduler, decoder, audio_decoder, buffers, reader
+    ↓
+sync_manager                    ← timebase, buffers
+    ↓
+playback_engine                 ← sync_manager, chunk_pipeline, seek_engine
+    ↓
+stream_controller               ← playback_engine, lazy_index
+    ↓
+player_window                   ← stream_controller, video_widget, controls, keyboard_mixin
+    ↓
+main                            ← player_window, config, logger
+
+Что выигрываем
+
+    Каждый модуль можно тестировать изолированно
+
+    Замена компонента не затрагивает остальные
+
+    Понятный API между слоями
+
+    Размер самого большого файла: ~300 строк (вместо 2000+)
+
+    Лёгкое расширение (новый планировщик, новый декодер)
+
+План перехода (без даунтайма)
+
+    Создать core/, pipeline/, index/, seek/ — пустые пакеты с __init__.py
+
+    Написать тесты для новых модулей (на старом индексе)
+
+    Внедрять по одному модулю, сохраняя старый код в legacy/
+
+    После полной замены — удалить legacy/
+
+Готов начать с любого модуля — какой первый?
+Подготовь детальный план действий по пунктно
+План полного рефакторинга Dalet Proxy Player v7
+Предварительный этап: подготовка структуры
+
+0.1 Создать новую структуру папок:
+cmd
+
+mkdir core pipeline index seek decode buffer output io config utils ui legacy
+
+0.2 Создать __init__.py во всех новых папках.
+
+0.3 Перенести текущие файлы в соответствующие папки без изменений кода, поправив импорты:
+
+    decoder.py, audio_decoder.py → decode/
+
+    frame_buffer.py, audio_buffer.py → buffer/
+
+    audio_output.py, video_widget.py → output/
+
+    win_sequential_reader.py, ref_parser.py → io/
+
+    config.py, settings_dialog.py, timebase.py → config/
+
+    logger.py, utils.py, tcd_parser.py → utils/
+
+    controls.py, log_window.py → ui/
+
+    moov_builder.py, idx_cache.py → index/
+
+    chunk_reader.py, hybrid_seek.py → legacy/
+
+    player_controller.py, player_window.py → корень (пока)
+
+0.4 Обновить все импорты в перемещённых файлах. Убедиться, что плеер запускается.
+
+0.5 Создать legacy/__init__.py с реэкспортом старых классов для обратной совместимости.
+Этап 1: timebase.py и adaptive_chunk.py (нет зависимостей)
+
+1.1 Обновить config/timebase.py — добавить недостающие константы для v7.
+
+1.2 Создать pipeline/adaptive_chunk.py:
+python
+
+class AdaptiveChunkStrategy:
+    def get_chunk_size(speed: float) -> int
+    def get_fast_forward_stride(speed: float) -> int
+    def get_lookahead_chunks(speed: float, buffer_size: int) -> int
+
+1.3 Написать модульный тест tests/test_adaptive_chunk.py.
+Этап 2: lazy_index.py (зависит от moov_builder, idx_cache)
+
+2.1 Создать index/lazy_index.py:
+python
+
+class LazyIndex:
+    def __init__(self, mirror_path: Path, mp4_path: Path)
+    def open_window(center_frame: int, window_seconds: float) -> IndexWindow
+    def expand_window(direction: str, frames: int) -> IndexWindow
+    def move_window_async(center_frame: int, callback: Callable)
+    def close()
+
+class IndexWindow:
+    video_records: np.ndarray
+    audio_tracks: np.ndarray
+    chunk_offsets: np.ndarray
+    chunk_sizes: np.ndarray
+    audio_chunks: List[Dict]
+    window_start_frame: int
+    window_end_frame: int
+    idr_frames: np.ndarray
+    def contains_frame(frame_idx: int) -> bool
+    def chunk_range() -> Tuple[int, int]
+
+2.2 Добавить в moov_builder.py функции:
+python
+
+def build_audio_tracks_range(c9_records, start_pts, end_pts, track_filter)
+def get_chunks_range(video_records, mdat_end, start_chunk, end_chunk)
+
+2.3 Написать тест tests/test_lazy_index.py на файле 6+ часов.
+
+2.4 Проверить: окно 5 минут = ~7500 кадров, память ~50 МБ (вместо ~800 МБ).
+Этап 3: seek_engine.py (зависит от lazy_index, decoder)
+
+3.1 Создать seek/seek_engine.py:
+python
+
+class SeekEngine:
+    def __init__(self, lazy_index: LazyIndex, decoder: Decoder, reader: WinSequentialReader)
+    def seek_async(frame_idx: int, on_complete: Callable, on_error: Callable) -> SeekRequest
+    def seek_sync(frame_idx: int) -> FrameRingBuffer
+    def cancel_current()
+
+class SeekRequest:
+    def cancel()
+    def wait(timeout: float) -> bool
+
+3.2 Реализовать двоичный поиск IDR через np.searchsorted.
+
+3.3 Реализовать отмену через threading.Event с проверкой в цикле декодирования.
+
+3.4 Написать тест tests/test_seek_engine.py.
+
+3.5 Интегрировать в player_controller.py параллельно со старым HybridSeekWorker (через флаг use_v7_seek).
+Этап 4: stream_scheduler.py (зависит от adaptive_chunk)
+
+4.1 Создать pipeline/stream_scheduler.py:
+python
+
+class StreamScheduler:
+    def set_normal_mode(current_chunk: int)
+    def set_seek_mode(target_chunk: int)
+    def set_fast_forward_mode(direction: int, speed: float)
+    def set_pause_mode(current_chunk: int)
+    def get_next_chunk() -> Optional[int]
+    @property
+    def pending_chunks() -> List[int]
+
+4.2 Реализовать 4 режима с разной стратегией выбора чанков.
+
+4.3 Написать тест tests/test_stream_scheduler.py.
+Этап 5: chunk_pipeline.py (зависит от всех предыдущих)
+
+5.1 Создать pipeline/chunk_pipeline.py:
+python
+
+class ChunkPipeline:
+    def __init__(...)
+    def start(start_chunk: int)
+    def stop()
+    def pause()
+    def resume()
+    def update_index(window: IndexWindow)
+    def prioritize_chunk(chunk_idx: int)
+
+class ReaderStage(Stage)
+class DemuxerStage(Stage)
+class VideoDecoderStage(Stage)
+class AudioDecoderStage(Stage)
+
+5.2 Реализовать очереди между этапами (queue.Queue(maxsize=N)).
+
+5.3 Выделить логику демукса из ChunkReader._decode_chunk_data в DemuxerStage.
+
+5.4 Написать тест tests/test_chunk_pipeline.py.
+
+5.5 Интегрировать в player_controller параллельно со старым ChunkReader (через флаг use_v7_pipeline).
+Этап 6: sync_manager.py (зависит от timebase, буферов)
+
+6.1 Создать core/sync_manager.py:
+python
+
+class SyncManager:
+    def __init__(self, video_buffer: FrameRingBuffer, audio_buffers: MultiTrackAudioBuffer)
+    def get_display_frame(audio_clock: int, audio_delay: int) -> Optional[np.ndarray]
+    def update_drift_correction(audio_clock: int)
+    def get_adjusted_clock() -> float
+    def drop_old_frames(threshold: int)
+
+6.2 Выделить логику синхронизации из PlayerController.get_display_frame().
+
+6.3 Написать тест tests/test_sync_manager.py.
+Этап 7: playback_engine.py (зависит от sync_manager, chunk_pipeline, seek_engine)
+
+7.1 Создать core/playback_engine.py:
+python
+
+class PlaybackEngine:
+    def __init__(self, pipeline: ChunkPipeline, seek_engine: SeekEngine, 
+                 sync_manager: SyncManager, audio_output: AudioOutput)
+    def start_playback(start_frame: int)
+    def pause()
+    def resume()
+    def stop()
+    def seek(frame_idx: int)
+    def set_speed(direction: int)
+    def reset_speed()
+    @property
+    def playing() -> bool
+    @property
+    def audio_clock() -> int
+
+7.2 Выделить логику из PlayerController (методы play, pause, resume, seek, JKL).
+
+7.3 Написать тест tests/test_playback_engine.py.
+Этап 8: stream_controller.py (зависит от playback_engine, lazy_index)
+
+8.1 Создать core/stream_controller.py:
+python
+
+class StreamController:
+    def __init__(self, lazy_index: LazyIndex, playback_engine: PlaybackEngine)
+    def open_file(mp4_path: Path) -> bool
+    def close()
+    def get_total_frames() -> int
+    def get_start_frame_offset() -> int
+    def get_timeline_preview(start_frame: int, end_frame: int) -> np.ndarray
+    @property
+    def ready() -> bool
+
+8.2 Выделить логику инициализации из PlayerController._background_init.
+
+8.3 Упростить PlayerController до фасада над StreamController.
+Этап 9: keyboard_mixin.py и финальная очистка player_window.py
+
+9.1 Создать core/keyboard_mixin.py с методами:
+python
+
+class KeyboardMixin:
+    def keyPressEvent(event)
+    def _jkl_seek(direction)
+    def _jkl_stop()
+    def _on_timecode_entered()
+    def _enter_timecode_edit_mode()
+    def _exit_timecode_edit_mode()
+
+9.2 Упростить player_window.py до:
+python
+
+class PlayerWidget(QWidget, KeyboardMixin):
+    def __init__(...)
+    def _init_ui()
+    def _update_frame()
+    def closeEvent(event)
+
+9.3 Удалить дублирующие методы из player_window.py.
+Этап 10: удаление legacy и финальное тестирование
+
+10.1 Переключить use_v7_seek = True, use_v7_pipeline = True в конфиге.
+
+10.2 Прогнать полный набор тестов на:
+
+    Коротком файле (5 минут)
+
+    Среднем файле (30 минут)
+
+    Длинном файле (6 часов)
+
+10.3 Удалить папку legacy/.
+
+10.4 Удалить флаги use_v7_* из кода.
+
+10.5 Обновить README.md до версии v7.
+
+10.6 Собрать exe и провести приёмочное тестирование.
+График (оценка времени)
+Этап	Часов	Риск
+0: Подготовка	2	Низкий
+1: adaptive_chunk	2	Низкий
+2: lazy_index	4	Средний
+3: seek_engine	3	Средний
+4: stream_scheduler	2	Низкий
+5: chunk_pipeline	6	Высокий
+6: sync_manager	3	Низкий
+7: playback_engine	4	Средний
+8: stream_controller	3	Средний
+9: keyboard_mixin	2	Низкий
+10: удаление legacy	3	Средний
+Итого	34
