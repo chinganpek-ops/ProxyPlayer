@@ -1,0 +1,889 @@
+#!/usr/bin/env python3
+"""
+player_window.py – главное окно плеера и менеджер окон (ProxyPlayer v1).
+Использует StreamController вместо PlayerController.
+Сохраняет весь функционал v6: поле ввода таймкода, JKL, трей, менеджер.
+"""
+
+import sys
+import os
+import re
+import time
+import ctypes
+from ctypes import wintypes
+from pathlib import Path
+import logging
+from PyQt5.QtCore import Qt, QTimer, QProcess, QObject, QThread, pyqtSignal
+from PyQt5.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMessageBox, QFileDialog, QAction, QDesktopWidget, QToolBar, QPushButton,
+    QSystemTrayIcon, QMenu, QStyle
+)
+from PyQt5.QtGui import QIcon, QMouseEvent
+from PyQt5.QtNetwork import QLocalServer, QLocalSocket, QTcpServer, QTcpSocket
+from PyQt5.QtWidgets import QApplication
+
+from core.stream_controller import StreamController
+from config.config import save_config, load_config
+from output.video_widget import GLVideoWidget
+from ui.controls import build_controls
+
+logger = logging.getLogger(__name__)
+
+# Windows API для управления окнами
+user32 = ctypes.windll.user32
+MoveWindow = user32.MoveWindow
+MoveWindow.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.BOOL]
+MoveWindow.restype = wintypes.BOOL
+SetWindowPos = user32.SetWindowPos
+SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+SetWindowPos.restype = wintypes.BOOL
+GetWindowLongW = user32.GetWindowLongW
+GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+GetWindowLongW.restype = wintypes.LONG
+SetWindowLongW = user32.SetWindowLongW
+SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+SetWindowLongW.restype = wintypes.LONG
+
+HWND_TOP = 0
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_NOACTIVATE = 0x08000000
+
+PANEL_WIDTH = 30
+COLS = 3
+ROWS = 2
+MAX_PLAYERS = COLS * ROWS        # 6
+
+
+class OpenPlayerWorker(QThread):
+    """Фоновый поток для поиска MP4 по ID в homedir."""
+    found_signal = pyqtSignal(object)   # передаёт Path или None
+
+    def __init__(self, manager, file_id, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.file_id = file_id
+
+    def run(self):
+        t0 = time.time()
+        logger.info(f"Воркер начал поиск MP4 для ID {self.file_id}")
+        try:
+            mp4_path = self.manager._resolve_id_to_mp4(self.file_id)
+            t1 = time.time()
+            logger.info(f"Поиск MP4 завершён за {t1 - t0:.2f} сек, результат: {mp4_path}")
+            self.found_signal.emit(mp4_path)
+        except Exception as e:
+            logger.exception(f"Ошибка в воркере: {e}")
+            self.found_signal.emit(None)
+
+
+class PlayerWidget(QWidget):
+    """Полноценный плеер (используется в режиме --managed)."""
+    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, parent=None):
+        super().__init__(parent)
+        self.mp4_path = mp4_path
+        self.use_moov = use_moov
+        self.config = config
+
+        self.setStyleSheet("""
+            background-color: #2b2b2b;
+            QLabel { color: #ffffff; }
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 3px;
+            }
+            QPushButton:hover { background-color: #4a4a4a; }
+            QSlider::groove:horizontal { background: #555555; height: 6px; }
+            QSlider::handle:horizontal { background: #888888; width: 12px; margin: -4px 0; }
+        """)
+
+        self._seeking = False
+        self._muted = False
+        self._updating_tracks = False
+        self.tc_mode = 0
+        self.active_tracks = config.get('active_tracks', [2, 3])
+        self.active_tracks = [t for t in self.active_tracks if 2 <= t <= 5] or [2, 3]
+
+        if not use_moov:
+            self.ref_path, self.idx_path = self._find_related_files(mp4_path)
+            if not self.idx_path.exists():
+                QMessageBox.critical(self, "Ошибка", f"Отсутствует .idx для {mp4_path}")
+                raise FileNotFoundError(f"Missing .idx for {mp4_path}")
+        else:
+            self.ref_path, self.idx_path = None, None
+
+        self.player = self._create_controller()
+        self._active_player = self.player
+
+        self._init_ui()
+
+        self._updating_tracks = True
+        for tid, action in self.track_actions.items():
+            action.setChecked(tid in self.active_tracks)
+        self._updating_tracks = False
+
+        if self.player and self.player._ready.is_set():
+            self.player.set_active_tracks(self.active_tracks)
+
+        self.render_timer = QTimer(self)
+        self.render_timer.timeout.connect(self._update_frame)
+        self._update_render_interval()
+
+        self.video_widget.show_placeholder()
+
+        self.player._ready.wait()  # ждём готовности
+        self.player.start_playback()
+
+        if not self.render_timer.isActive():
+            self.render_timer.start()
+
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    @staticmethod
+    def _find_related_files(mp4_path: Path):
+        stem = mp4_path.stem
+        parent = mp4_path.parent
+        ref = parent / f"{stem}.mp4.ref"
+        if not ref.exists(): ref = parent / f"{stem}.ref"
+        idx = parent / "idx" / "mp4" / f"{stem}.idx"
+        if not idx.exists(): idx = parent / f"{stem}.idx"
+        return ref, idx
+
+    def _create_controller(self):
+        avcc_override = None
+        avcc_hex = self.config.get('default_avcc', '')
+        if avcc_hex:
+            try:
+                avcc_override = bytes.fromhex(avcc_hex)
+            except ValueError:
+                logger.warning("Некорректный default_avcc в конфиге, используется стандартный")
+
+        return StreamController(
+            ref_path=self.ref_path if self.ref_path and self.ref_path.exists() else None,
+            idx_path=self.idx_path,
+            mp4_path=self.mp4_path,
+            avcc_override=avcc_override,
+            fps=self.config.get('fps', 25.0),
+            buffer_size=self.config.get('buffer_size', 600),
+            free_slots_required=self.config.get('free_slots_required', 25),
+            group_chunks=self.config.get('group_chunks', 30),
+            max_retries=self.config.get('max_retries', 3),
+            thread_type=self.config.get('thread_type', 'AUTO'),
+            thread_count=self.config.get('thread_count', 0),
+            skip_frame=self.config.get('skip_frame', False),
+            gpu_mode=self.config.get('use_gpu_decoder', 'off'),
+            audio_delay_ms=self.config.get('audio_delay_ms', 0),
+            start_from_live=True,
+        )
+
+    def _init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.video_widget = GLVideoWidget(self)
+        main_layout.addWidget(self.video_widget, 1)
+
+        ctrl = build_controls(show_settings_button=False)
+        self.tc_label = ctrl['tc_label']
+        self.tc_input = ctrl['tc_input']  # поле ввода (изначально скрыто)
+        self.aspect_btn = ctrl['aspect_btn']
+        self.slider = ctrl['slider']
+        self.play_pause_btn = ctrl['play_pause_btn']
+        self.live_btn = ctrl['live_btn']
+        self.rew_btn = ctrl['rew_btn']
+        self.fwd_btn = ctrl['fwd_btn']
+        self.step_back_btn = ctrl['step_back_btn']
+        self.step_fwd_btn = ctrl['step_fwd_btn']
+        self.tc_btn = ctrl['tc_btn']
+        self.settings_btn = ctrl.get('settings_btn')
+        self.volume_slider = ctrl.get('volume_slider')
+        self.mute_btn = ctrl.get('mute_btn')
+        self.track_btn = ctrl['track_btn']
+        self.track_actions = ctrl['track_actions']
+
+        self.slider.setFocusPolicy(Qt.NoFocus)
+
+        # Двойной клик по метке таймкода — вход в режим редактирования
+        self.tc_label.mouseDoubleClickEvent = self._enter_timecode_edit_mode
+
+        # Верхняя информационная строка
+        info_layout = QHBoxLayout()
+        info_layout.addWidget(self.track_btn)
+        if self.mute_btn: info_layout.addWidget(self.mute_btn)
+        info_layout.addStretch()
+        info_layout.addWidget(self.tc_label)
+        info_layout.addWidget(self.tc_input)       # поле ввода таймкода
+        info_layout.addWidget(self.tc_btn)
+        info_layout.addStretch()
+        info_layout.addWidget(self.aspect_btn)
+        if self.settings_btn is not None: info_layout.addWidget(self.settings_btn)
+        main_layout.addLayout(info_layout)
+
+        main_layout.addWidget(self.slider)
+
+        # Кнопки управления
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.rew_btn)
+        btn_layout.addWidget(self.step_back_btn)
+        btn_layout.addWidget(self.play_pause_btn)
+        btn_layout.addWidget(self.step_fwd_btn)
+        btn_layout.addWidget(self.fwd_btn)
+        btn_layout.addWidget(self.live_btn)
+        main_layout.addLayout(btn_layout)
+
+        # Подключение сигналов
+        if self.settings_btn is not None: self.settings_btn.clicked.connect(self._show_settings)
+        self.aspect_btn.clicked.connect(self._toggle_aspect)
+        self.slider.sliderPressed.connect(self._on_slider_pressed)
+        self.slider.sliderMoved.connect(self._on_slider_moved)
+        self.slider.sliderReleased.connect(self._on_slider_released)
+        self.play_pause_btn.clicked.connect(self._toggle_play_pause)
+        self.live_btn.clicked.connect(self._go_live)
+        self.rew_btn.clicked.connect(lambda: self._seek_relative(-5))
+        self.fwd_btn.clicked.connect(lambda: self._seek_relative(5))
+        self.step_back_btn.clicked.connect(lambda: self._seek_relative(-1))
+        self.step_fwd_btn.clicked.connect(lambda: self._seek_relative(1))
+        self.tc_btn.clicked.connect(self._toggle_tc_mode)
+        if self.mute_btn: self.mute_btn.clicked.connect(self._toggle_mute)
+        if self.volume_slider: self.volume_slider.valueChanged.connect(self._on_volume_changed)
+        for tid, action in self.track_actions.items():
+            action.toggled.connect(lambda checked, tid=tid: self._on_track_toggled(tid, checked))
+
+        # Таймкод: обработка ввода
+        self.tc_input.returnPressed.connect(self._on_timecode_entered)
+
+    # ... все остальные методы из v6 (не изменяются) ...
+    def _enter_timecode_edit_mode(self, event: QMouseEvent = None):
+        if self._active_player.playing:
+            self._toggle_play_pause()
+        self.tc_label.hide()
+        self.tc_input.show()
+        self.tc_input.setFocus()
+        self.tc_input.selectAll()
+
+    def _exit_timecode_edit_mode(self):
+        self.tc_input.hide()
+        self.tc_label.show()
+        self.setFocus()
+
+    def send_hwnd_to_manager(self):
+        self._send_hwnd_attempt(0)
+
+    def _send_hwnd_attempt(self, attempt):
+        if attempt > 5:
+            logger.error("Failed to send HWND after 5 attempts")
+            return
+        hwnd = int(self.winId())
+        if hwnd == 0:
+            QTimer.singleShot(200, lambda: self._send_hwnd_attempt(attempt + 1))
+            return
+        socket = QLocalSocket(self)
+        socket.connectToServer("DaletPlayerManager")
+        if socket.waitForConnected(1000):
+            socket.write(str(hwnd).encode())
+            socket.flush()
+            socket.disconnectFromServer()
+            logger.debug(f"Sent HWND {hwnd}")
+        else:
+            logger.warning(f"Connection attempt {attempt} failed, retrying...")
+            QTimer.singleShot(500, lambda: self._send_hwnd_attempt(attempt + 1))
+
+    def _on_track_toggled(self, track_id, checked):
+        if not self.player or self._updating_tracks: return
+        active = [tid for tid, act in self.track_actions.items() if act.isChecked()]
+        if not active: self.sender().setChecked(True); return
+        self.active_tracks = active; self.player.set_active_tracks(active)
+
+    def _toggle_mute(self):
+        if not self.player or not self.player.audio_output: return
+        self._muted = not self._muted
+        self.player.audio_output.set_muted(self._muted)
+        if self.mute_btn: self.mute_btn.setText("🔇" if self._muted else "🔊")
+
+    def _update_render_interval(self):
+        fps = self.config.get('fps', 25.0)
+        self.render_timer.setInterval(int(1000.0 / fps))
+
+    def _on_player_ready(self):
+        if hasattr(self.player, '_init_error') and self.player._init_error:
+            QMessageBox.critical(self, "Ошибка плеера", self.player._init_error); return
+        self.player.set_active_tracks(self.active_tracks)
+        if not self.render_timer.isActive(): self.render_timer.start()
+
+    def _on_player_error(self, error_msg):
+        QMessageBox.critical(self, "Ошибка плеера", error_msg)
+
+    def start_playback(self):
+        if not self.player._ready.is_set():
+            self.player._ready.wait()
+        self._start_playback_now()
+
+    def _start_playback_now(self):
+        if self.player.playing: return
+        self.player.start_playback()
+        if not self.render_timer.isActive(): self.render_timer.start()
+
+    def _update_frame(self):
+        if self._seeking: return
+        try:
+            frame = self._active_player.get_display_frame()
+            if frame is not None and frame.size > 0: self.video_widget.set_frame(frame)
+        except Exception as e: logger.error(f"Error getting frame: {e}")
+        if isinstance(self._active_player, StreamController):
+            audio_clock = self.player.audio_clock
+            frame_idx = audio_clock // 1920
+            total = self.player.total_frames
+            if total > 1:
+                max_slider = total - 1
+                if not self.player._finalized:
+                    max_slider = max(0, total - 1600)
+                if self.slider.maximum() != max_slider:
+                    self.slider.setRange(0, max_slider)
+            self.slider.blockSignals(True)
+            self.slider.setValue(frame_idx)
+            self.slider.blockSignals(False)
+        self._update_tc_label()
+        if hasattr(self._active_player, 'get_seek_speed_display'):
+            speed_display = self._active_player.get_seek_speed_display()
+            if "x1" not in speed_display:
+                self.play_pause_btn.setText(speed_display)
+            else:
+                self.play_pause_btn.setText("⏸ Pause" if self._active_player.playing else "▶ Play")
+        else:
+            self.play_pause_btn.setText("⏸ Pause" if self._active_player.playing else "▶ Play")
+
+    def _update_tc_label(self):
+        if self.tc_mode == 0: tc = self._active_player.get_local_timecode_str()
+        else: tc = self._active_player.get_real_timecode_str()
+        self.tc_label.setText(tc)
+        if not self.tc_input.hasFocus():
+            self.tc_input.setText(tc)
+
+    def _on_slider_pressed(self):
+        self._seeking = True
+
+    def _on_slider_moved(self, value): self._show_tc_for_frame(value)
+
+    def _on_slider_released(self):
+        self.player.seek_absolute(self.slider.value())
+
+    def _on_seek_finished(self, frame_idx):
+        self._seeking = False
+        self._update_frame()
+        self.video_widget.hide_placeholder()
+        self.video_widget.update()
+
+    def _show_tc_for_frame(self, frame_idx):
+        total_seconds = frame_idx / self.player.fps
+        h, m = divmod(int(total_seconds), 3600)
+        m, s = divmod(m, 60)
+        f = int(round((total_seconds - int(total_seconds)) * self.player.fps))
+        if self.tc_mode == 0: self.tc_label.setText(f"{h:02d}:{m:02d}:{s:02d};{f:02d}")
+        else:
+            abs_frame = self.player.start_frame_offset + frame_idx
+            total_seconds_abs = abs_frame / self.player.fps
+            h_abs, m_abs = divmod(int(total_seconds_abs), 3600)
+            m_abs, s_abs = divmod(m_abs, 60)
+            f_abs = int(round((total_seconds_abs - int(total_seconds_abs)) * self.player.fps))
+            self.tc_label.setText(f"{h_abs:02d}:{m_abs:02d}:{s_abs:02d};{f_abs:02d}")
+
+    def _on_timecode_entered(self):
+        if not self.player:
+            return
+        tc_text = self.tc_input.text().strip()
+        if not tc_text or tc_text == "00:00:00;00":
+            self._exit_timecode_edit_mode()
+            return
+        try:
+            from config.timebase import timecode_to_frame
+            target_frame = timecode_to_frame(tc_text, self.player.fps)
+            if self.tc_mode == 1:
+                target_frame = target_frame - self.player.start_frame_offset
+                target_frame = max(0, min(target_frame, self.player.total_frames - 1))
+            if target_frame < 0 or target_frame >= self.player.total_frames:
+                logger.warning(f"Таймкод {tc_text} вне диапазона (кадр {target_frame})")
+                self._exit_timecode_edit_mode()
+                return
+            self.player.seek_absolute(target_frame)
+        except ValueError as e:
+            logger.warning(f"Ошибка парсинга таймкода '{tc_text}': {e}")
+        finally:
+            self._exit_timecode_edit_mode()
+
+    def _jkl_seek(self, direction: int):
+        if hasattr(self.player, 'set_seek_speed'):
+            self.player.set_seek_speed(direction)
+            self.play_pause_btn.setText(self.player.get_seek_speed_display())
+
+    def _jkl_stop(self):
+        if hasattr(self.player, 'reset_seek_speed'):
+            self.player.reset_seek_speed()
+            if self.player.playing:
+                self.play_pause_btn.setText("⏸ Pause")
+            else:
+                self.play_pause_btn.setText("▶ Play")
+
+    def _seek_relative(self, delta_sec):
+        self.player.seek_relative(delta_sec)
+
+    def _toggle_play_pause(self): self._active_player.toggle_pause()
+
+    def _go_live(self):
+        if not isinstance(self._active_player, StreamController):
+            return
+        self._active_player.seek_absolute(max(0, self._active_player.total_frames - 1600))
+        self.setFocus()
+
+    def _on_recording_finished(self):
+        self.video_widget.show_transmission_ended()
+        self.play_pause_btn.setText("▶ Play")
+
+    def _toggle_tc_mode(self):
+        self.tc_mode = 1 - self.tc_mode
+        self.tc_btn.setText("TC: Лок" if self.tc_mode == 0 else "TC: Реал")
+
+    def _on_volume_changed(self, value):
+        if self.player.audio_output: self.player.audio_output.set_volume(value / 100.0)
+
+    def _show_settings(self):
+        from config.settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self.config, self)
+        if dlg.exec_() == QDialog.Accepted:
+            self.config = dlg.get_settings()
+            save_config(self.config)
+            self._reload_file()
+
+    def _reload_file(self):
+        self.render_timer.stop()
+        if hasattr(self, 'render_timer') and self.render_timer is not None:
+            self.render_timer.deleteLater()
+            self.render_timer = None
+        self.player.close()
+        self.player = self._create_controller()
+        self.player._ready.wait()
+        self._active_player = self.player
+        self.render_timer = QTimer(self)
+        self.render_timer.timeout.connect(self._update_frame)
+        self._update_render_interval()
+        self.render_timer.start()
+
+    def _toggle_aspect(self):
+        modes = ['fit', '4:3', '16:9']
+        cur = self.video_widget.aspect_mode
+        idx = modes.index(cur)
+        nxt = modes[(idx + 1) % len(modes)]
+        self.video_widget.aspect_mode = nxt
+        self.aspect_btn.setText(f"📐 {nxt}   ")
+        self.video_widget.update(); self.setFocus()
+
+    def keyPressEvent(self, event):
+        if self.tc_input.hasFocus():
+            if event.key() == Qt.Key_Escape:
+                self._exit_timecode_edit_mode()
+                return
+            super().keyPressEvent(event)
+            return
+
+        if event.isAutoRepeat():
+            return
+        key = event.key()
+        if key == Qt.Key_Space:
+            self._toggle_play_pause()
+        elif key == Qt.Key_Left:
+            self._seek_relative(-1)
+        elif key == Qt.Key_Right:
+            self._seek_relative(1)
+        elif key == Qt.Key_Up:
+            self._seek_relative(10)
+        elif key == Qt.Key_Down:
+            self._seek_relative(-10)
+        elif key == Qt.Key_J:
+            self._jkl_seek(-1)
+        elif key == Qt.Key_L:
+            self._jkl_seek(1)
+        elif key == Qt.Key_K:
+            self._jkl_stop()
+        else:
+            super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        if hasattr(self, 'render_timer') and self.render_timer is not None:
+            self.render_timer.stop()
+            self.render_timer.deleteLater()
+            self.render_timer = None
+        if hasattr(self, 'video_widget') and self.video_widget is not None:
+            if hasattr(self.video_widget, 'cleanup'):
+                self.video_widget.cleanup()
+        if self.player:
+            self.player.close()
+        super().closeEvent(event)
+
+
+class ManagedProcess(QObject):
+    process_started = pyqtSignal(int)
+    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, parent=None):
+        super().__init__(parent)
+        self.process = QProcess(self)
+        exe = sys.executable if getattr(sys, 'frozen', False) else sys.executable
+        script = [] if getattr(sys, 'frozen', False) else [os.path.join(os.path.dirname(__file__), 'main.py')]
+        args = script + [str(mp4_path), '--managed']
+        if use_moov: args.append('--moov')
+        self.process.setProcessChannelMode(QProcess.ForwardedChannels)
+        self.process.start(exe, args)
+        if self.process.waitForStarted(5000):
+            pid = self.process.processId()
+            if pid: self.process_started.emit(pid)
+        else: logger.error("Cannot start player process")
+
+    def close(self):
+        if self.process: self.process.kill(); self.process.waitForFinished(1000)
+
+
+class ManagerWindow(QMainWindow):
+    def __init__(self, mp4_path: Path, config, use_moov: bool = False):
+        super().__init__()
+        self.config = config if isinstance(config, dict) else config.dict() if hasattr(config, 'dict') else {}
+        self.use_moov = use_moov
+        self.processes = []
+        self.hwnd_positions = {}
+        self._closing = False
+        self._index_builder_process = None
+        self._last_worker = None
+
+        self.setWindowTitle("ProxyPlayer v1 – Panel")
+        self.setStyleSheet("background-color: #2b2b2b;")
+
+        icon_path = os.path.join(os.path.dirname(__file__), 'icon.ico')
+        if os.path.exists(icon_path):
+            app_icon = QIcon(icon_path)
+        else:
+            app_icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
+        self.setWindowIcon(app_icon)
+
+        screen = QDesktopWidget().availableGeometry(self)
+        self.setGeometry(0, 0, PANEL_WIDTH, screen.height())
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        hwnd = int(self.winId())
+        ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ex_style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(app_icon)
+        self.tray_icon.setToolTip("ProxyPlayer")
+
+        tray_menu = QMenu()
+        add_action = QAction("Добавить плеер", self)
+        add_action.triggered.connect(self._open_new_player)
+        tray_menu.addAction(add_action)
+        exit_action = QAction("Выход", self)
+        exit_action.triggered.connect(self._stop_all)
+        tray_menu.addAction(exit_action)
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+        toolbar = QToolBar("Управление", self)
+        toolbar.setOrientation(Qt.Vertical)
+        self.addToolBar(Qt.LeftToolBarArea, toolbar)
+
+        add_btn = QAction("➕", self)
+        add_btn.setToolTip("Добавить плеер")
+        add_btn.triggered.connect(self._open_new_player)
+        toolbar.addAction(add_btn)
+
+        self.stop_all_btn = QPushButton("з\nа\nв\nе\nр\nш\nи\nт\nь")
+        self.stop_all_btn.setFixedSize(28, 140)
+        self.stop_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #ffffff;
+                border: 1px solid #555555;
+                font-size: 11px;
+                padding: 4px 2px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+        """)
+        self.stop_all_btn.clicked.connect(self._stop_all)
+        toolbar.addWidget(self.stop_all_btn)
+
+        self.server = QLocalServer(self)
+        self.server.newConnection.connect(self._on_new_connection)
+        self.server.listen("ProxyPlayerManager")
+
+        self.http_port = self.config.get('http_port', 18080)
+        self.http_server = QTcpServer(self)
+        self.http_server.newConnection.connect(self._on_http_new_connection)
+        if self.http_server.listen(port=self.http_port):
+            logger.info(f"HTTP-сервер Video Helper запущен на порту {self.http_port}")
+        else:
+            logger.error(f"Не удалось запустить HTTP-сервер на порту {self.http_port}")
+
+        if mp4_path.exists():
+            self._start_index_builder(mp4_path, use_moov)
+            self._add_player(mp4_path, use_moov)
+
+        QTimer.singleShot(2000, self._force_place_first_player)
+        self.hide()
+
+    def _start_index_builder(self, mp4_path: Path, use_moov: bool):
+        if use_moov: return
+        stem = mp4_path.stem
+        parent = mp4_path.parent
+        idx_path = parent / "idx" / "mp4" / f"{stem}.idx"
+        if not idx_path.exists():
+            idx_path = parent / f"{stem}.idx"
+        if not idx_path.exists():
+            logger.warning("IDX не найден, IndexBuilder не запущен")
+            return
+        exe = sys.executable
+        if getattr(sys, 'frozen', False):
+            args = ['--index-builder', str(idx_path)]
+        else:
+            script = os.path.join(os.path.dirname(__file__), 'main.py')
+            args = [script, '--index-builder', str(idx_path)]
+        self._index_builder_process = QProcess(self)
+        self._index_builder_process.setProcessChannelMode(QProcess.ForwardedChannels)
+        self._index_builder_process.start(exe, args)
+        logger.info("IndexBuilder запущен для %s", mp4_path)
+
+    def _force_place_first_player(self):
+        if not self.hwnd_positions and self.processes:
+            pid = self.processes[0].process.processId()
+            if pid:
+                import win32gui, win32process
+                def callback(hwnd, hwnds):
+                    if win32gui.IsWindowVisible(hwnd):
+                        _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                        if found_pid == pid:
+                            hwnds.append(hwnd)
+                hwnds = []
+                win32gui.EnumWindows(callback, hwnds)
+                if hwnds:
+                    self._place_new_player(hwnds[0])
+
+    def _add_player(self, mp4_path, use_moov):
+        if len(self.processes) >= MAX_PLAYERS:
+            logger.warning(f"Достигнут лимит окон ({MAX_PLAYERS}), плеер не добавлен")
+            QMessageBox.warning(
+                self, "Ограничение",
+                f"Нельзя открыть больше {MAX_PLAYERS} окон плееров.\nЗакройте одно из существующих."
+            )
+            return
+        proc = ManagedProcess(mp4_path, self.config, use_moov, self)
+        proc.process.finished.connect(lambda: self._on_player_closed(proc))
+        self.processes.append(proc)
+
+    def _on_new_connection(self):
+        socket = self.server.nextPendingConnection()
+        if socket.waitForReadyRead(1000):
+            data = socket.readAll().data().decode().strip()
+            logger.debug(f"Получена команда: {data}")
+            if data.startswith("FILE:"):
+                file_path = data[5:]
+                self._open_player_from_path(Path(file_path))
+            elif data.startswith("ID:"):
+                file_id = data[3:]
+                mp4_path = self._resolve_id_to_mp4(file_id)
+                if mp4_path:
+                    self._open_player_from_path(mp4_path)
+                else:
+                    logger.error(f"Не удалось найти MP4 для ID {file_id} в homedir")
+            else:
+                try:
+                    hwnd = int(data)
+                    self._place_new_player(hwnd)
+                except ValueError:
+                    logger.warning(f"Неизвестный формат данных: {data}")
+        socket.disconnectFromServer()
+
+    def _on_http_new_connection(self):
+        client = self.http_server.nextPendingConnection()
+        if client:
+            client.readyRead.connect(lambda c=client: self._on_http_ready_read(c))
+            client.disconnected.connect(lambda c=client: c.deleteLater())
+            if client.bytesAvailable():
+                self._on_http_ready_read(client)
+
+    def _on_http_ready_read(self, client):
+        try:
+            data = bytes(client.readAll()).decode('utf-8', errors='ignore')
+            logger.debug(f"HTTP запрос: {data}")
+            request_line = data.split('\r\n')[0]
+            if 'GET' in request_line and '/open?file=' in request_line:
+                parts = request_line.split('=')
+                if len(parts) > 1:
+                    file_part = parts[1].split()[0]
+                    file_id = file_part.rsplit('.', 1)[0] if '.' in file_part else file_part
+                    logger.info(f"Video Helper запросил ID: {file_id}, запускаю фоновый поиск")
+                    client.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                    client.disconnectFromHost()
+                    worker = OpenPlayerWorker(self, file_id)
+                    worker.found_signal.connect(self._on_mp4_found)
+                    self._last_worker = worker
+                    worker.start()
+                    return
+            client.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            client.disconnectFromHost()
+        except Exception as e:
+            logger.error(f"Ошибка асинхронной обработки HTTP: {e}")
+            client.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+            client.disconnectFromHost()
+
+    def _on_mp4_found(self, mp4_path: Path | None):
+        if mp4_path:
+            logger.info(f"Открытие плеера для {mp4_path}")
+            self._open_player_from_path(mp4_path)
+        else:
+            logger.error("Файл не найден, плеер не открыт")
+
+    def _resolve_id_to_mp4(self, file_id: str) -> Path | None:
+        homedir = self.config.get('homedir', '')
+        if not homedir: return None
+        home = Path(homedir)
+        if not home.is_dir(): return None
+        if not re.match(r'^\d+$', file_id): return None
+        pattern = re.compile(
+            re.escape(file_id) + r'_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{5}\.mp4$',
+            re.IGNORECASE
+        )
+        try:
+            for entry in home.glob(f"{file_id}_*.mp4"):
+                if entry.is_file() and pattern.match(entry.name):
+                    logger.info(f"Найден файл по ID {file_id}: {entry}")
+                    return entry
+        except PermissionError:
+            logger.warning(f"Нет доступа к папке {home}")
+        return None
+
+    def _open_player_from_path(self, mp4_path: Path):
+        if not mp4_path.exists():
+            logger.warning(f"Файл не найден: {mp4_path}")
+            return
+        idx = mp4_path.parent / "idx" / "mp4" / f"{mp4_path.stem}.idx"
+        if not idx.exists():
+            idx = mp4_path.parent / f"{mp4_path.stem}.idx"
+        if not idx.exists():
+            logger.error(f"IDX не найден для {mp4_path}")
+            QMessageBox.critical(self, "Ошибка", f"Отсутствует индексный файл (.idx) для:\n{mp4_path}")
+            return
+        use_moov = False
+        if idx.exists():
+            self._start_index_builder(mp4_path, use_moov=False)
+        self._add_player(mp4_path, use_moov)
+
+    def _open_new_player(self):
+        start_dir = self.config.get('homedir', '')
+        if start_dir and not os.path.isdir(start_dir):
+            start_dir = ''
+        path, _ = QFileDialog.getOpenFileName(self, "Open MP4", start_dir, "MP4 files (*.mp4)")
+        if path:
+            mp4_path = Path(path)
+            self._open_player_from_path(mp4_path)
+
+    def _place_new_player(self, hwnd):
+        screen = QDesktopWidget().availableGeometry(self)
+        cell_w = (screen.width() - PANEL_WIDTH) // COLS
+        cell_h = screen.height() // ROWS
+        for row in range(ROWS):
+            for col in range(COLS):
+                x = PANEL_WIDTH + col * cell_w
+                y = row * cell_h
+                if not self._is_cell_occupied(x, y, hwnd):
+                    self._set_position(hwnd, x, y, cell_w, cell_h)
+                    return
+        row = len(self.hwnd_positions) // COLS
+        col = len(self.hwnd_positions) % COLS
+        x = PANEL_WIDTH + col * cell_w
+        y = row * cell_h
+        self._set_position(hwnd, x, y, cell_w, cell_h)
+
+    def _is_cell_occupied(self, x, y, hwnd):
+        for h, pos in self.hwnd_positions.items():
+            if h != hwnd and abs(pos[0] - x) < 10 and abs(pos[1] - y) < 10:
+                return True
+        return False
+
+    def _set_position(self, hwnd, x, y, w, h):
+        MoveWindow(hwnd, x, y, w, h, True)
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        self.hwnd_positions[hwnd] = (x, y, w, h)
+        QTimer.singleShot(500, lambda: MoveWindow(hwnd, x, y, w, h, True))
+        logger.debug(f"Placed HWND {hwnd} at ({x},{y}) {w}x{h}")
+
+    def _on_player_closed(self, proc):
+        if proc in self.processes:
+            self.processes.remove(proc)
+            logger.debug("Процесс плеера удалён из списка")
+        self._cleanup_hwnd_positions()
+
+    def _cleanup_hwnd_positions(self):
+        import win32gui
+        dead = []
+        for hwnd in self.hwnd_positions:
+            if not win32gui.IsWindow(hwnd):
+                dead.append(hwnd)
+        for hwnd in dead:
+            del self.hwnd_positions[hwnd]
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick or reason == QSystemTrayIcon.Trigger:
+            self._toggle_visible()
+
+    def _toggle_visible(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self._show_from_tray()
+
+    def _show_from_tray(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _stop_all(self):
+        if self._closing: return
+        self._closing = True
+        msg = QMessageBox(self)
+        msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
+        msg.setWindowTitle("Подтверждение")
+        msg.setText("Вы точно хотите завершить воспроизведение видео?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        msg.button(QMessageBox.Yes).setText("Да")
+        msg.button(QMessageBox.No).setText("Нет")
+        msg.setStyleSheet("""
+            QMessageBox { background-color: #2b2b2b; color: #ffffff; }
+            QLabel { color: #ffffff; }
+            QPushButton { background-color: #3a3a3a; color: #ffffff; border: 1px solid #555555; padding: 5px 15px; }
+            QPushButton:hover { background-color: #4a4a4a; }
+        """)
+        screen = QDesktopWidget().availableGeometry(self)
+        msg.move(screen.center() - msg.rect().center())
+        reply = msg.exec_()
+        if reply == QMessageBox.Yes:
+            self.server.close()
+            if self._index_builder_process:
+                self._index_builder_process.kill()
+                self._index_builder_process.waitForFinished(1000)
+            for proc in self.processes:
+                if hasattr(proc, 'close'): proc.close()
+            self.tray_icon.hide()
+            QApplication.quit()
+        else:
+            self._closing = False
+
+    def closeEvent(self, event):
+        if self._closing:
+            event.accept()
+        else:
+            self.hide()
+            event.ignore()

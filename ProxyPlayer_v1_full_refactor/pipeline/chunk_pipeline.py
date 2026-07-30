@@ -64,7 +64,9 @@ class ReaderStage(Stage):
                 self.stop_event.wait(0.1)
                 continue
 
-            start_off, end_off = self._chunk_bounds(chunk_idx)
+            # Переводим глобальный индекс чанка в локальный индекс окна
+            local_chunk = chunk_idx - self._window.chunk_range()[0]
+            start_off, end_off = self._chunk_bounds(local_chunk)
             if start_off >= end_off:
                 self._scheduler.mark_chunk_failed(chunk_idx)
                 continue
@@ -79,10 +81,10 @@ class ReaderStage(Stage):
                 logger.error(f"Ошибка чтения чанка {chunk_idx}: {e}")
                 self._scheduler.mark_chunk_failed(chunk_idx)
 
-    def _chunk_bounds(self, idx: int) -> Tuple[int, int]:
-        if idx < len(self._window.chunk_offsets):
-            off = int(self._window.chunk_offsets[idx])
-            size = int(self._window.chunk_sizes[idx])
+    def _chunk_bounds(self, local_chunk: int) -> Tuple[int, int]:
+        if 0 <= local_chunk < len(self._window.chunk_offsets):
+            off = int(self._window.chunk_offsets[local_chunk])
+            size = int(self._window.chunk_sizes[local_chunk])
             return off, off + size
         return 0, 0
 
@@ -120,6 +122,7 @@ class DemuxerStage(Stage):
                 logger.error(f"Ошибка демукса чанка {chunk_idx}: {e}")
 
     def _demux(self, chunk_idx: int, raw_data: bytes) -> Tuple[List[VideoPacket], List[AudioPacket]]:
+        local_chunk = chunk_idx - self._window.chunk_range()[0]
         video_packets = []
         audio_packets = []
 
@@ -131,10 +134,8 @@ class DemuxerStage(Stage):
             if rec is None:
                 continue
 
-            # абсолютное смещение кадра
             abs_off = int(rec['f1']) - 4 + int(rec['f2']) * SEGMENT_SIZE
 
-            # размер кадра: до следующей записи или до границы чанка
             if i < FRAMES_PER_CHUNK - 1:
                 next_rec = self._get_video_record(abs_idx + 1)
                 if next_rec is not None:
@@ -143,16 +144,14 @@ class DemuxerStage(Stage):
                 else:
                     size = 0
             else:
-                # последний кадр чанка – используем размер чанка
-                chunk_start = int(self._window.chunk_offsets[chunk_idx])
-                chunk_end = chunk_start + int(self._window.chunk_sizes[chunk_idx])
+                chunk_start = int(self._window.chunk_offsets[local_chunk])
+                chunk_end = chunk_start + int(self._window.chunk_sizes[local_chunk])
                 size = chunk_end - abs_off
 
             if size <= 0:
                 continue
 
-            # относительное смещение в raw_data
-            rel_start = abs_off - self._chunk_video_start(chunk_idx)
+            rel_start = abs_off - self._chunk_video_start(local_chunk)
             if rel_start < 0 or rel_start + size > len(raw_data):
                 continue
 
@@ -161,12 +160,9 @@ class DemuxerStage(Stage):
             video_packets.append((sample, pts))
 
         # ---------- аудио ----------
-        audio_chunk = self._get_audio_chunk(chunk_idx)
+        audio_chunk = self._get_audio_chunk(local_chunk)
         if audio_chunk:
-            chunk_read_start = self._chunk_read_start(chunk_idx, raw_data)  # нужно знать read_start из _load_and_decode_chunk_impl
-            # Упрощение: read_start совпадает с video_start (начало чанка). 
-            # Для точности надо передать read_start из ReaderStage, но пока используем начало видео.
-            read_start = self._chunk_video_start(chunk_idx)
+            read_start = self._chunk_video_start(local_chunk)
 
             for track_id, entries in audio_chunk.items():
                 if track_id == 0 or track_id > 3:
@@ -185,19 +181,14 @@ class DemuxerStage(Stage):
                         if 0 <= rel2 < len(raw_data):
                             d2 = raw_data[rel2:rel2 + size2]
 
-                    need_fade = False  # будем определять в AudioDecoderStage
-                    audio_packets.append((track_id, d1, d2, entry['pts'], need_fade))
+                    audio_packets.append((track_id, d1, d2, entry['pts'], False))
 
         return video_packets, audio_packets
 
-    def _chunk_video_start(self, chunk_idx: int) -> int:
-        if chunk_idx < len(self._window.chunk_offsets):
-            return int(self._window.chunk_offsets[chunk_idx])
+    def _chunk_video_start(self, local_chunk: int) -> int:
+        if 0 <= local_chunk < len(self._window.chunk_offsets):
+            return int(self._window.chunk_offsets[local_chunk])
         return 0
-
-    def _chunk_read_start(self, chunk_idx: int, raw_data: bytes) -> int:
-        # заглушка: возвращает начало видео (как в старом коде)
-        return self._chunk_video_start(chunk_idx)
 
     def _get_video_record(self, abs_idx: int):
         local_idx = abs_idx - self._window.window_start_frame
@@ -205,8 +196,7 @@ class DemuxerStage(Stage):
             return self._window.video_records[local_idx]
         return None
 
-    def _get_audio_chunk(self, chunk_idx: int):
-        local_chunk = chunk_idx - self._window.chunk_range()[0]
+    def _get_audio_chunk(self, local_chunk: int):
         if 0 <= local_chunk < len(self._window.audio_chunks):
             return self._window.audio_chunks[local_chunk]
         return {}
@@ -237,7 +227,6 @@ class VideoDecoderStage(Stage):
                         continue
                     frames = self._decoder.decode_sample(filtered)
                     for frame in frames:
-                        # неблокирующая вставка
                         while not self.stop_event.is_set():
                             if self._buffer.try_push(frame, pts):
                                 break
@@ -283,7 +272,6 @@ class AudioDecoderStage(Stage):
                 if need_fade and len(pcm_block) >= self._fade_len:
                     pcm_block[:self._fade_len] *= np.linspace(0, 1, self._fade_len)
 
-                # неблокирующая запись
                 while not self.stop_event.is_set():
                     if self._audio_buffers.try_write(track_id, pcm_block, pts):
                         break
