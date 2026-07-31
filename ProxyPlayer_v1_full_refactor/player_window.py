@@ -101,6 +101,7 @@ class PlayerWidget(QWidget):
 
         if not use_moov:
             self.ref_path, self.idx_path = self._find_related_files(mp4_path)
+            logger.debug(f"PlayerWidget: ref={self.ref_path}, idx={self.idx_path}")
             if not self.idx_path.exists():
                 QMessageBox.critical(self, "Ошибка", f"Отсутствует .idx для {mp4_path}")
                 raise FileNotFoundError(f"Missing .idx for {mp4_path}")
@@ -124,7 +125,11 @@ class PlayerWidget(QWidget):
         self._update_render_interval()
 
         self.video_widget.show_placeholder()
-        self.player._ready.wait()
+        # Ждём готовности StreamController с таймаутом
+        if not self.player._ready.wait(timeout=120):
+            QMessageBox.critical(self, "Ошибка", "Не удалось инициализировать плеер за 120 секунд")
+            self.player.close()
+            raise RuntimeError("StreamController initialization timeout")
         self.player.start_playback()
         if not self.render_timer.isActive():
             self.render_timer.start()
@@ -233,7 +238,6 @@ class PlayerWidget(QWidget):
             action.toggled.connect(lambda checked, tid=tid: self._on_track_toggled(tid, checked))
         self.tc_input.returnPressed.connect(self._on_timecode_entered)
 
-    # Все методы управления, seek, JKL, таймкод, перерисовка – идентичны версии v6
     def _enter_timecode_edit_mode(self, event=None):
         if self._active_player.playing: self._toggle_play_pause()
         self.tc_label.hide(); self.tc_input.show(); self.tc_input.setFocus(); self.tc_input.selectAll()
@@ -374,22 +378,26 @@ class PlayerWidget(QWidget):
 
 class ManagedProcess(QObject):
     process_started = pyqtSignal(int)
-    def __init__(self, mp4_path, config, use_moov=False, parent=None):
+    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, parent=None):
         super().__init__(parent)
         self.process = QProcess(self)
         exe = sys.executable
         script = [] if getattr(sys, 'frozen', False) else [os.path.join(os.path.dirname(__file__), 'main.py')]
         args = script + [str(mp4_path), '--managed']
         if use_moov: args.append('--moov')
-        self.process.setProcessChannelMode(QProcess.ForwardedChannels)
+        logger.debug(f"Запуск плеера: {exe} {args}")
         self.process.start(exe, args)
         if self.process.waitForStarted(5000):
             pid = self.process.processId()
             if pid: self.process_started.emit(pid)
-        else: logger.error("Cannot start player process")
+        else:
+            logger.error("Cannot start player process")
 
     def close(self):
-        if self.process: self.process.kill(); self.process.waitForFinished(1000)
+        if self.process:
+            self.process.terminate()
+            if not self.process.waitForFinished(3000):
+                self.process.kill()
 
 
 class ManagerWindow(QMainWindow):
@@ -431,12 +439,13 @@ class ManagerWindow(QMainWindow):
         else: logger.error(f"Не удалось запустить HTTP-сервер на порту {self.http_port}")
 
         if mp4_path.exists():
-            self._start_index_builder(mp4_path, use_moov)
+            # IndexBuilder не запускаем, чтобы не блокировать зеркало .idx
             self._add_player(mp4_path, use_moov)
         QTimer.singleShot(2000, self._force_place_first_player)
         self.hide()
 
     def _start_index_builder(self, mp4_path: Path, use_moov: bool):
+        """Запускает IndexBuilder как отдельный процесс (используется только при необходимости)."""
         if use_moov: return
         stem = mp4_path.stem
         parent = mp4_path.parent
@@ -545,13 +554,19 @@ class ManagerWindow(QMainWindow):
 
     def _open_player_from_path(self, mp4_path: Path):
         if not mp4_path.exists(): return
-        idx = mp4_path.parent / "idx" / "mp4" / f"{mp4_path.stem}.idx"
-        if not idx.exists(): idx = mp4_path.parent / f"{mp4_path.stem}.idx"
-        if not idx.exists():
+        logger.debug(f"Поиск .idx для {mp4_path}")
+        idx1 = mp4_path.parent / "idx" / "mp4" / f"{mp4_path.stem}.idx"
+        idx2 = mp4_path.parent / f"{mp4_path.stem}.idx"
+        logger.debug(f"  проверяю {idx1} : {idx1.exists()}")
+        logger.debug(f"  проверяю {idx2} : {idx2.exists()}")
+        if idx1.exists():
+            idx = idx1
+        elif idx2.exists():
+            idx = idx2
+        else:
             QMessageBox.critical(self, "Ошибка", f"Отсутствует индексный файл (.idx) для:\n{mp4_path}")
             return
         use_moov = False
-        if idx.exists(): self._start_index_builder(mp4_path, use_moov=False)
         self._add_player(mp4_path, use_moov)
 
     def _open_new_player(self):
@@ -636,5 +651,10 @@ class ManagerWindow(QMainWindow):
         else: self._closing = False
 
     def closeEvent(self, event):
-        if self._closing: event.accept()
-        else: self.hide(); event.ignore()
+        if self._closing:
+            event.accept()
+        else:
+            self._stop_all()
+            self.tray_icon.hide()
+            QApplication.quit()
+            event.accept()
