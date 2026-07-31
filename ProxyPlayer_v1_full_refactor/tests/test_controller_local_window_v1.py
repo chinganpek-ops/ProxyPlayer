@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Комплексный интеграционный тест StreamController с новыми модулями.
 Проверяет: инициализацию, старт, seek, JKL, таймкод.
@@ -5,11 +6,16 @@
 """
 
 import os
+import sys
 import time
 from pathlib import Path
+
 import pytest
 import numpy as np
 from PyQt5.QtWidgets import QApplication
+
+# Добавляем корень проекта в sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.stream_controller import StreamController
 from config.timebase import timecode_to_frame

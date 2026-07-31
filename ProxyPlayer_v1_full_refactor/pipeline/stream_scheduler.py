@@ -1,5 +1,6 @@
 """
 stream_scheduler.py – приоритетный планировщик загрузки чанков (локальные индексы).
+Добавлен контроль заполненности видеобуфера.
 """
 
 import threading
@@ -37,8 +38,13 @@ class StreamScheduler:
 
         self._loaded_chunks: Set[int] = set()
         self._lock = threading.Lock()
+        self._video_buffer = None      # будет установлен через set_buffer
 
     # ------------------------------------------------------------------
+    def set_buffer(self, video_buffer):
+        """Устанавливает ссылку на видеобуфер для контроля заполнения."""
+        self._video_buffer = video_buffer
+
     def set_normal_mode(self, current_local_chunk: int, total_local_chunks: int):
         with self._lock:
             self._mode = PlaybackMode.NORMAL
@@ -73,6 +79,9 @@ class StreamScheduler:
     def get_next_chunk(self) -> Optional[int]:
         """Возвращает локальный индекс следующего чанка для загрузки."""
         with self._lock:
+            # Не выдаём новые чанки, если буфер заполнен
+            if self._video_buffer is not None and self._video_buffer.free_slots == 0:
+                return None
             return self._get_next_chunk_locked()
 
     def _get_next_chunk_locked(self) -> Optional[int]:

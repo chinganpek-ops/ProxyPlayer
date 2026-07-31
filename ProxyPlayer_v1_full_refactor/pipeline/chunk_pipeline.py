@@ -1,6 +1,7 @@
 """
 chunk_pipeline.py – трёхэтапный конвейер загрузки и декодирования чанков.
 Работает с локальными индексами чанков внутри IndexWindow.
+Добавлены защитные проверки и контроль заполнения буфера.
 """
 
 import queue
@@ -59,7 +60,7 @@ class ReaderStage(Stage):
                 self.stop_event.wait(0.1)
                 continue
 
-            if local_chunk >= self._window.total_chunks:
+            if local_chunk < 0 or local_chunk >= self._window.total_chunks:
                 self._scheduler.mark_chunk_failed(local_chunk)
                 continue
 
@@ -113,12 +114,11 @@ class DemuxerStage(Stage):
         video_packets = []
         audio_packets = []
 
-        # Глобальный номер первого кадра этого чанка
         global_start_frame = (self._window.window_start_chunk + local_chunk) * FRAMES_PER_CHUNK
         chunk_start_offset = int(self._window.chunk_offsets[local_chunk])
         cached_offs = self._window.cached_offsets
 
-        # ---------- видео ----------
+        # Видео
         for i in range(FRAMES_PER_CHUNK):
             abs_idx = global_start_frame + i
             local_frame = abs_idx - self._window.window_start_frame
@@ -131,7 +131,6 @@ class DemuxerStage(Stage):
             else:
                 abs_off = int(rec['f1']) - 4 + int(rec['f2']) * SEGMENT_SIZE
 
-            # размер кадра
             if i < FRAMES_PER_CHUNK - 1:
                 next_local = local_frame + 1
                 if next_local < len(self._window.video_records):
@@ -144,7 +143,6 @@ class DemuxerStage(Stage):
                 else:
                     size = 0
             else:
-                # последний кадр чанка
                 chunk_end = chunk_start_offset + int(self._window.chunk_sizes[local_chunk])
                 size = chunk_end - abs_off
 
@@ -159,27 +157,28 @@ class DemuxerStage(Stage):
             pts = abs_idx * SAMPLES_PER_VIDEO_FRAME
             video_packets.append((sample, pts))
 
-        # ---------- аудио ----------
-        audio_chunk = self._window.audio_chunks[local_chunk] if local_chunk < len(self._window.audio_chunks) else {}
-        if audio_chunk:
-            for track_id, entries in audio_chunk.items():
-                if track_id == 0 or track_id > 3:
-                    continue
-                for entry in entries:
-                    size2 = entry.get('size2', 0)
-                    rel = entry['abs_offset'] - chunk_start_offset
+        # Аудио
+        if local_chunk < len(self._window.audio_chunks):
+            audio_chunk = self._window.audio_chunks[local_chunk]
+            if audio_chunk:
+                for track_id, entries in audio_chunk.items():
+                    if track_id == 0 or track_id > 3:
+                        continue
+                    for entry in entries:
+                        size2 = entry.get('size2', 0)
+                        rel = entry['abs_offset'] - chunk_start_offset
 
-                    d1 = b''
-                    if 0 <= rel < len(raw_data):
-                        d1 = raw_data[rel:rel + entry['size1']]
+                        d1 = b''
+                        if 0 <= rel < len(raw_data):
+                            d1 = raw_data[rel:rel + entry['size1']]
 
-                    d2 = b''
-                    if size2 > 0:
-                        rel2 = rel + entry['size1']
-                        if 0 <= rel2 < len(raw_data):
-                            d2 = raw_data[rel2:rel2 + size2]
+                        d2 = b''
+                        if size2 > 0:
+                            rel2 = rel + entry['size1']
+                            if 0 <= rel2 < len(raw_data):
+                                d2 = raw_data[rel2:rel2 + size2]
 
-                    audio_packets.append((track_id, d1, d2, entry['pts'], False))
+                        audio_packets.append((track_id, d1, d2, entry['pts'], False))
 
         return video_packets, audio_packets
 
@@ -266,6 +265,8 @@ class ChunkPipeline:
         self._audio_buffers = audio_buffers
 
         self._scheduler = StreamScheduler(AdaptiveChunkStrategy())
+        self._scheduler.set_buffer(self._video_buffer)
+
         self._raw_queue = queue.Queue(maxsize=RAW_QUEUE_SIZE)
         self._video_queue = queue.Queue(maxsize=VIDEO_QUEUE_SIZE)
         self._audio_queue = queue.Queue(maxsize=AUDIO_QUEUE_SIZE)
@@ -297,5 +298,4 @@ class ChunkPipeline:
 
     def update_window(self, new_window: IndexWindow):
         self._window = new_window
-        # Перезапускаем планировщик с начала нового окна
         self._scheduler.set_normal_mode(0, new_window.total_chunks)
