@@ -84,6 +84,17 @@ class PlaybackEngine:
         self._audio_buffers.clear_all()
 
         self._pipeline.start(start_local_chunk=local_chunk)
+
+        # Ждём появления первого кадра, чтобы установить keep_last
+        waited = 0.0
+        while self._video_buffer.count == 0 and waited < 5.0:
+            time.sleep(0.1)
+            waited += 0.1
+
+        first = self._video_buffer.peek_first()
+        if first is not None:
+            self._video_buffer.update_keep_last(first[1], first[0])
+
         self.playing = False
         self._paused = True
 
