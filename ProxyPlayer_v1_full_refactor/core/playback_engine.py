@@ -1,7 +1,7 @@
 """
 playback_engine.py – движок воспроизведения для ProxyPlayer v1.
 Объединяет SeekEngine, ChunkPipeline, SyncManager и AudioOutput.
-Реализует: start_playback, pause, resume, stop, seek, set_speed.
+Работает с локальными индексами чанков через IndexWindow.
 """
 
 import time
@@ -16,7 +16,7 @@ from buffer.audio_buffer import MultiTrackAudioBuffer
 from core.sync_manager import SyncManager
 from pipeline.chunk_pipeline import ChunkPipeline
 from seek.seek_engine import SeekEngine
-from output.audio_output import AudioOutput  # будет создан позже или заменён на мок
+from output.audio_output import AudioOutput
 from config.timebase import (
     SAMPLES_PER_VIDEO_FRAME,
     video_frame_to_pts,
@@ -25,16 +25,10 @@ from config.timebase import (
 
 logger = logging.getLogger(__name__)
 
-SEEK_SPEEDS = [2.0, 4.0, 8.0]          # множители для JKL
-LIVE_SEEK_OFFSET_FRAMES = 1600
+SEEK_SPEEDS = [2.0, 4.0, 8.0]
 
 
 class PlaybackEngine:
-    """
-    Управляет состоянием воспроизведения.
-    Не зависит от GUI – получает команды и отдаёт кадры.
-    """
-
     def __init__(
         self,
         pipeline: ChunkPipeline,
@@ -58,14 +52,13 @@ class PlaybackEngine:
         self.total_frames = total_frames
         self.fps = fps
 
-        # Состояние
         self.playing = False
         self._paused = False
         self._audio_clock = 0
         self._clock_lock = threading.Lock()
         self._current_frame_idx = 0
 
-        # JKL-перемотка
+        # JKL
         self._seek_speed = 1.0
         self._seek_speed_index = -1
         self._seek_direction = 0
@@ -73,27 +66,28 @@ class PlaybackEngine:
         self._seek_accumulator = 0.0
         self._normal_playing_state = False
 
-        # Ожидание видео при старте аудио
         self._video_ready_timer: Optional[threading.Timer] = None
 
     # ------------------------------------------------------------------
-    # Управление воспроизведением
-    # ------------------------------------------------------------------
-    def start_playback(self, start_frame_idx: int):
-        """Инициализирует буферы и запускает конвейер. После вызова плеер на паузе."""
+    def start_playback(self, global_start_frame: int, window_start_frame: int):
+        """
+        Запускает конвейер с локального чанка.
+        global_start_frame – глобальный индекс кадра.
+        window_start_frame – глобальный индекс первого кадра окна.
+        """
+        local_chunk = (global_start_frame - window_start_frame) // 12
         with self._clock_lock:
-            self._audio_clock = video_frame_to_pts(start_frame_idx)
-        self._current_frame_idx = start_frame_idx
+            self._audio_clock = video_frame_to_pts(global_start_frame)
+        self._current_frame_idx = global_start_frame
 
         self._video_buffer.clear()
         self._audio_buffers.clear_all()
 
-        self._pipeline.start(start_chunk=start_frame_idx // 12)
+        self._pipeline.start(start_local_chunk=local_chunk)
         self.playing = False
         self._paused = True
 
     def resume(self):
-        """Запускает воспроизведение после паузы."""
         if not self._paused:
             return
         self._paused = False
@@ -103,7 +97,6 @@ class PlaybackEngine:
         self._start_audio_when_video_ready()
 
     def pause(self):
-        """Ставит на паузу."""
         if not self.playing:
             return
         self.playing = False
@@ -112,56 +105,47 @@ class PlaybackEngine:
         self._stop_video_ready_timer()
 
     def stop(self):
-        """Останавливает воспроизведение и конвейер."""
         self.playing = False
         self._paused = False
         self._pipeline.stop()
         self._audio_output.stop()
         self._stop_video_ready_timer()
 
-    def toggle_play_pause(self):
-        if self.playing:
-            self.pause()
-        elif self._paused:
-            self.resume()
-
     # ------------------------------------------------------------------
-    # Перемотка
-    # ------------------------------------------------------------------
-    def seek(self, frame_idx: int):
-        """Перемотка на указанный кадр."""
+    def seek(self, global_frame_idx: int, window: 'IndexWindow'):
+        """Перемотка на глобальный кадр. window — новое окно от LazyIndex."""
         self.pause()
         self._seek_engine.seek_async(
-            frame_idx,
-            on_complete=self._on_seek_complete,
+            global_frame_idx,
+            on_complete=lambda buf: self._on_seek_complete(buf, window),
             on_error=lambda msg: logger.error(f"Seek error: {msg}"),
         )
 
-    def _on_seek_complete(self, buffer: FrameRingBuffer):
-        """Колбэк после успешного seek – подменяет буфер и запускает конвейер."""
-        # Замена буфера
+    def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow'):
         self._video_buffer, buffer = buffer, self._video_buffer
         buffer.clear()
 
         first = self._video_buffer.peek_first()
         if first:
-            pts, _ = first
-            self._video_buffer.update_keep_last(first[1], pts)
+            pts, frame = first
+            self._video_buffer.update_keep_last(frame, pts)
             self._audio_clock = pts
             self._current_frame_idx = pts_to_video_frame(pts)
             self._audio_buffers.clear_all()
             self._audio_output.reset_clock(pts)
 
+        # Запускаем конвейер с локального чанка
+        local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
         self._pipeline.stop()
-        self._pipeline.start(start_chunk=self._current_frame_idx // 12)
+        self._pipeline.update_window(window)
+        self._pipeline.start(start_local_chunk=local_chunk)
         self._paused = True
         self.playing = False
 
     # ------------------------------------------------------------------
-    # JKL-перемотка
+    # JKL
     # ------------------------------------------------------------------
     def set_speed(self, direction: int):
-        """J (назад) или L (вперёд)."""
         if self.total_frames == 0:
             return
         if self._seek_direction != direction:
@@ -177,7 +161,6 @@ class PlaybackEngine:
         self._last_seek_time = time.monotonic()
 
     def reset_speed(self):
-        """K – сброс скорости."""
         if self._seek_speed == 1.0 and self._seek_direction == 0:
             return
         self._seek_speed = 1.0
@@ -185,12 +168,10 @@ class PlaybackEngine:
         self._seek_direction = 0
         self._seek_accumulator = 0.0
         self._audio_output.set_volume(0.8)
-        if self._normal_playing_state:
-            if not self.playing:
-                self.resume()
-        else:
-            if self.playing:
-                self.pause()
+        if self._normal_playing_state and not self.playing:
+            self.resume()
+        elif not self._normal_playing_state and self.playing:
+            self.pause()
 
     def get_speed_display(self) -> str:
         if self._seek_direction == 0:
@@ -199,10 +180,7 @@ class PlaybackEngine:
         return f"{direction} x{self._seek_speed:.0f}"
 
     # ------------------------------------------------------------------
-    # Получение кадра (вызывается из GUI по таймеру)
-    # ------------------------------------------------------------------
     def get_display_frame(self) -> Optional[np.ndarray]:
-        # Режим JKL
         if self._seek_direction != 0 and self._seek_speed > 1.0:
             now = time.monotonic()
             dt = now - self._last_seek_time
@@ -225,7 +203,6 @@ class PlaybackEngine:
         )
 
     def _fast_seek(self, frame_idx: int):
-        """Быстрое перемещение без полного перестроения буфера."""
         self._current_frame_idx = frame_idx
         pts = video_frame_to_pts(frame_idx)
         with self._clock_lock:
@@ -234,9 +211,6 @@ class PlaybackEngine:
         first = self._video_buffer.peek_first()
         if first:
             self._video_buffer.update_keep_last(first[1], first[0])
-        # Перезапускаем конвейер с нового места (без очистки аудио)
-        self._pipeline.stop()
-        self._pipeline.start(start_chunk=frame_idx // 12)
 
     @property
     def audio_clock(self) -> int:
@@ -244,16 +218,12 @@ class PlaybackEngine:
             return self._audio_clock
 
     # ------------------------------------------------------------------
-    # Вспомогательные методы
-    # ------------------------------------------------------------------
     def _start_audio_when_video_ready(self):
-        """Запускает аудиовыход, когда в буфере есть кадр с подходящим PTS."""
         self._stop_video_ready_timer()
         first = self._video_buffer.peek_first()
         if first and first[0] <= self._audio_clock + SAMPLES_PER_VIDEO_FRAME // 2:
             self._audio_output.start()
             return
-        # Иначе запускаем таймер проверки
         self._video_ready_timer = threading.Timer(0.01, self._check_video_ready)
         self._video_ready_timer.start()
 
@@ -264,7 +234,6 @@ class PlaybackEngine:
         if first and first[0] <= self._audio_clock + SAMPLES_PER_VIDEO_FRAME // 2:
             self._audio_output.start()
         else:
-            # Повторная проверка через 10 мс
             self._video_ready_timer = threading.Timer(0.01, self._check_video_ready)
             self._video_ready_timer.start()
 
@@ -273,8 +242,6 @@ class PlaybackEngine:
             self._video_ready_timer.cancel()
             self._video_ready_timer = None
 
-    # ------------------------------------------------------------------
-    # Таймкоды (для GUI)
     # ------------------------------------------------------------------
     def get_local_timecode_str(self) -> str:
         idx = pts_to_video_frame(self._audio_clock)

@@ -1,5 +1,5 @@
 """
-stream_controller.py – фасад для всех новых компонентов ProxyPlayer v1.
+stream_controller.py – фасад для всех компонентов ProxyPlayer v1.
 Заменяет PlayerController из v6. Предоставляет единый API для GUI.
 """
 
@@ -15,7 +15,7 @@ from buffer.frame_buffer import FrameRingBuffer
 from buffer.audio_buffer import MultiTrackAudioBuffer
 from decode.decoder import Decoder
 from decode.audio_decoder import AudioDecoder
-from index.lazy_index import LazyIndex
+from index.lazy_index import LazyIndex, IndexWindow
 from index.idx_cache import prepare_mirror
 from file_io.win_sequential_reader import WinSequentialReader
 from utils.utils import get_real_size
@@ -82,7 +82,7 @@ class StreamController:
         self.audio_output: Optional[AudioOutput] = None
         self.active_tracks = [2, 3]
 
-        # Индекс и конвейер
+        # Компоненты новой архитектуры
         self._lazy_index: Optional[LazyIndex] = None
         self._pipeline: Optional[ChunkPipeline] = None
         self._seek_engine: Optional[SeekEngine] = None
@@ -94,7 +94,7 @@ class StreamController:
         self._ready = threading.Event()
         self._init_error: Optional[str] = None
 
-        # Инициализация в фоне
+        # Фоновая инициализация
         self._init_thread = threading.Thread(target=self._background_init, daemon=True)
         self._init_thread.start()
 
@@ -136,7 +136,7 @@ class StreamController:
             except Exception:
                 pass
 
-            # Создаём конвейер и движок
+            # Создаём компоненты
             self._pipeline = ChunkPipeline(
                 self.mp4_path, window, self.decoder, self.audio_decoders,
                 self.buffer_main, self.audio_buffers,
@@ -145,9 +145,10 @@ class StreamController:
             reader = WinSequentialReader(self.mp4_path, 0, False)
             self._seek_engine = SeekEngine(self._lazy_index, self.decoder, reader)
 
+            # Аудиовыход создадим при первом запуске
             self._playback = PlaybackEngine(
                 self._pipeline, self._seek_engine, self._sync_mgr,
-                self.audio_output or AudioOutput(self.audio_buffers),  # временная заглушка
+                self.audio_output or AudioOutput(self.audio_buffers),
                 self.buffer_main, self.audio_buffers,
                 start_frame_offset=self.start_frame_offset,
                 total_frames=self.total_frames,
@@ -161,15 +162,20 @@ class StreamController:
             logger.exception("Ошибка инициализации StreamController")
 
     # ------------------------------------------------------------------
-    # API, совместимый с PlayerController
+    # API для GUI (совместим с PlayerController)
     # ------------------------------------------------------------------
     def start_playback(self):
-        if not self._ready.is_set():
+        if not self._ready.is_set() or self._playback is None:
             return
+        window = self._lazy_index.window
+        if window is None:
+            return
+
         start_frame = 0
         if self._start_from_live and not self._finalized:
             start_frame = max(0, self.total_frames - LIVE_SEEK_OFFSET_FRAMES)
-        self._playback.start_playback(start_frame)
+
+        self._playback.start_playback(start_frame, window.window_start_frame)
         self.playing = False
         self._paused = True
 
@@ -198,8 +204,10 @@ class StreamController:
             self.resume()
 
     def seek_absolute(self, frame_idx: int):
-        if self._playback:
-            self._playback.seek(frame_idx)
+        if self._playback and self._lazy_index:
+            # Открываем окно вокруг целевого кадра и выполняем seek
+            window = self._lazy_index.open_window(frame_idx)
+            self._playback.seek(frame_idx, window)
 
     def seek_relative(self, delta_sec: float):
         if self._playback:

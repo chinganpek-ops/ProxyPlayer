@@ -2,6 +2,7 @@
 lazy_index.py – оконный доступ к индексу для ProxyPlayer v1.
 Загружает только необходимую часть video_records и audio_tracks
 вокруг текущей позиции, используя memory-mapped .idx файл.
+Все индексы внутри IndexWindow — локальные (от 0 до N-1).
 """
 
 import threading
@@ -18,6 +19,8 @@ from index.moov_builder import (
     _abs_offset, _filter_normal_records,
     get_idr_indices_from_mmap,
     build_audio_tracks,
+    build_chunks_from_cached_offsets,
+    build_audio_chunks_in_range,
     DEFAULT_TRACK_FILTER,
 )
 from index.idx_cache import open_idx_mmap
@@ -28,7 +31,7 @@ logger = logging.getLogger(__name__)
 class IndexWindow:
     """
     Срез индекса, охватывающий диапазон кадров [start_frame, end_frame).
-    Содержит готовые структуры для ChunkPipeline.
+    Все индексы внутри окна — локальные (от 0 до N-1).
     """
 
     def __init__(
@@ -41,25 +44,35 @@ class IndexWindow:
         start_frame: int,
         end_frame: int,
         idr_frames: np.ndarray,
+        cached_offsets: np.ndarray = None,
     ):
-        self.video_records = video_records
-        self.audio_tracks = audio_tracks
-        self.chunk_offsets = chunk_offsets
-        self.chunk_sizes = chunk_sizes
-        self.audio_chunks = audio_chunks
-        self.window_start_frame = start_frame
-        self.window_end_frame = end_frame
-        self.idr_frames = idr_frames
+        self.video_records = video_records          # локальные индексы 0..N-1
+        self.audio_tracks = audio_tracks            # локальные
+        self.chunk_offsets = chunk_offsets          # локальные
+        self.chunk_sizes = chunk_sizes              # локальные
+        self.audio_chunks = audio_chunks            # локальные индексы 0..M-1
+        self.window_start_frame = start_frame       # глобальный номер первого кадра
+        self.window_end_frame = end_frame           # глобальный номер последнего кадра + 1
+        self.window_start_chunk = start_frame // FRAMES_PER_CHUNK  # глобальный номер первого чанка
+        self.idr_frames = idr_frames                # локальные индексы IDR в окне
+        self.cached_offsets = cached_offsets        # предвычисленные абсолютные смещения
+
+    @property
+    def total_chunks(self) -> int:
+        """Количество чанков в окне (локальное)."""
+        return len(self.chunk_offsets)
 
     def contains_frame(self, frame_idx: int) -> bool:
-        """Проверяет, попадает ли кадр в окно."""
+        """Проверяет, попадает ли глобальный кадр в окно."""
         return self.window_start_frame <= frame_idx < self.window_end_frame
 
-    def chunk_range(self) -> Tuple[int, int]:
-        """Возвращает диапазон чанков в окне [start_chunk, end_chunk)."""
-        start_chunk = self.window_start_frame // FRAMES_PER_CHUNK
-        end_chunk = (self.window_end_frame + FRAMES_PER_CHUNK - 1) // FRAMES_PER_CHUNK
-        return start_chunk, end_chunk
+    def global_to_local_chunk(self, global_chunk: int) -> int:
+        """Переводит глобальный индекс чанка в локальный."""
+        return global_chunk - self.window_start_chunk
+
+    def local_to_global_frame(self, local_frame: int) -> int:
+        """Переводит локальный индекс кадра в глобальный."""
+        return local_frame + self.window_start_frame
 
 
 class LazyIndex:
@@ -76,7 +89,7 @@ class LazyIndex:
         # mmap полного индекса (только для чтения)
         self._all_193, self._all_c9 = open_idx_mmap(mirror_path)
 
-        # Полные video_records и audio_tracks не загружаются
+        # Полные video_records (глобальные индексы)
         self._video_records_full = _filter_normal_records(self._all_193)
         self._audio_tracks_full: Optional[np.ndarray] = None  # ленивая загрузка
 
@@ -85,7 +98,6 @@ class LazyIndex:
 
         # Параметры окна
         self.default_window_seconds = 300.0  # 5 минут
-        self.min_window_chunks = 100  # минимальный размер окна в чанках
 
     @property
     def window(self) -> Optional[IndexWindow]:
@@ -97,6 +109,7 @@ class LazyIndex:
         """
         Открывает окно вокруг center_frame.
         Если окно уже содержит этот кадр, возвращает текущее.
+        Возвращает IndexWindow с локальными индексами.
         """
         with self._lock:
             if self._window and self._window.contains_frame(center_frame):
@@ -109,20 +122,20 @@ class LazyIndex:
             half_samples = int(window_seconds * 48000 / 2)
             half_frames = half_samples // 1920
 
+            total_frames = len(self._video_records_full)
             start_frame = max(0, center_frame - half_frames)
-            end_frame = min(len(self._video_records_full), center_frame + half_frames)
+            end_frame = min(total_frames, center_frame + half_frames)
 
             # Гарантируем минимальный размер окна
-            if end_frame - start_frame < self.min_window_chunks * FRAMES_PER_CHUNK:
-                end_frame = min(
-                    len(self._video_records_full),
-                    start_frame + self.min_window_chunks * FRAMES_PER_CHUNK,
-                )
+            min_frames = 100 * FRAMES_PER_CHUNK
+            if end_frame - start_frame < min_frames:
+                end_frame = min(total_frames, start_frame + min_frames)
 
             self._window = self._build_window(start_frame, end_frame)
             logger.info(
                 f"Окно открыто: кадры {start_frame}-{end_frame} "
-                f"(чанки {self._window.chunk_range()})"
+                f"(чанки {self._window.window_start_chunk}-"
+                f"{self._window.window_start_chunk + self._window.total_chunks})"
             )
             return self._window
 
@@ -137,19 +150,39 @@ class LazyIndex:
         thread = threading.Thread(target=_move, daemon=True)
         thread.start()
 
+    def expand_window(self, new_end_frame: int) -> IndexWindow:
+        """Расширяет окно вперёд (при росте файла)."""
+        with self._lock:
+            if self._window is None:
+                return self.open_window(new_end_frame - 1000)
+
+            old_end = self._window.window_end_frame
+            if new_end_frame <= old_end:
+                return self._window
+
+            # Расширяем окно
+            start_frame = self._window.window_start_frame
+            end_frame = min(len(self._video_records_full), new_end_frame)
+            self._window = self._build_window(start_frame, end_frame)
+            logger.info(f"Окно расширено до кадра {end_frame}")
+            return self._window
+
     def close(self):
-        """Освобождает ресурсы (mmap будет закрыт при удалении объекта)."""
+        """Освобождает ресурсы."""
         self._window = None
         self._all_193 = None
         self._all_c9 = None
 
     # ------------------------------------------------------------------
     def _build_window(self, start_frame: int, end_frame: int) -> IndexWindow:
-        """Строит IndexWindow для указанного диапазона кадров."""
-        # 1. Видео-записи в диапазоне
+        """Строит IndexWindow с локальными индексами для указанного диапазона."""
+        # 1. Видео-записи в диапазоне (срез — view, не копия)
         video_slice = self._video_records_full[start_frame:end_frame]
 
-        # 2. Аудио-записи (ленивая загрузка полных треков при первом обращении)
+        # 2. Кэшируем абсолютные смещения ОДИН раз
+        cached_offsets = _abs_offset(video_slice) if len(video_slice) > 0 else np.array([], dtype=np.uint64)
+
+        # 3. Аудио-записи (ленивая загрузка полных треков при первом обращении)
         if self._audio_tracks_full is None:
             self._audio_tracks_full = build_audio_tracks(
                 self._all_c9, track_filter=DEFAULT_TRACK_FILTER
@@ -165,13 +198,18 @@ class LazyIndex:
         )
         audio_slice = self._audio_tracks_full[audio_mask]
 
-        # 3. Чанки для видео в окне
-        chunk_offsets, chunk_sizes = self._build_chunks_for_slice(video_slice)
+        # 4. Чанки для видео в окне (используем кэшированные смещения)
+        chunk_offsets, chunk_sizes = build_chunks_from_cached_offsets(
+            video_slice, cached_offsets, self.mdat_end
+        )
 
-        # 4. Аудио-чанки
-        audio_chunks = self._build_audio_chunks_for_slice(audio_slice, start_frame)
+        # 5. Аудио-чанки (предвычисленный индекс, без searchsorted)
+        start_chunk = start_frame // FRAMES_PER_CHUNK
+        audio_chunks = build_audio_chunks_in_range(
+            audio_slice, start_chunk, len(chunk_offsets)
+        )
 
-        # 5. IDR в окне
+        # 6. IDR в окне (локальные индексы)
         idr_in_window = get_idr_indices_from_mmap(video_slice)
 
         return IndexWindow(
@@ -183,68 +221,5 @@ class LazyIndex:
             start_frame=start_frame,
             end_frame=end_frame,
             idr_frames=idr_in_window,
+            cached_offsets=cached_offsets,
         )
-
-    def _build_chunks_for_slice(
-        self, video_slice: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Строит чанки для заданного среза видео-записей."""
-        if len(video_slice) == 0:
-            return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
-
-        offs = _abs_offset(video_slice)
-        n = len(video_slice)
-        nchunks = (n + FRAMES_PER_CHUNK - 1) // FRAMES_PER_CHUNK
-
-        chunk_offs = np.empty(nchunks, dtype=np.int64)
-        chunk_sizes = np.empty(nchunks, dtype=np.int64)
-
-        for i in range(nchunks):
-            start_idx = i * FRAMES_PER_CHUNK
-            end_idx = min(start_idx + FRAMES_PER_CHUNK, n)
-
-            chunk_offs[i] = offs[start_idx]
-            if end_idx < n:
-                next_off = offs[end_idx]
-            else:
-                next_off = np.uint64(self.mdat_end)
-            chunk_sizes[i] = max(0, int(next_off) - int(chunk_offs[i]))
-
-        return chunk_offs, chunk_sizes
-
-    def _build_audio_chunks_for_slice(
-        self, audio_slice: np.ndarray, window_start_frame: int
-    ) -> List[Dict]:
-        """Строит аудио-чанки для среза audio_tracks."""
-        start_chunk = window_start_frame // FRAMES_PER_CHUNK
-        num_chunks = (
-            max(0, audio_slice['pts'].max() - audio_slice['pts'].min())
-            // SAMPLES_PER_CHUNK
-            + 1
-        )
-
-        if len(audio_slice) == 0 or num_chunks == 0:
-            return [{} for _ in range(num_chunks)]
-
-        pts_array = audio_slice['pts']
-        chunks = []
-        for chunk_idx in range(start_chunk, start_chunk + num_chunks):
-            start_pts = chunk_idx * SAMPLES_PER_CHUNK
-            end_pts = start_pts + SAMPLES_PER_CHUNK
-            left = np.searchsorted(pts_array, start_pts, side='left')
-            right = np.searchsorted(pts_array, end_pts, side='left')
-
-            chunk_entries = defaultdict(list)
-            for i in range(left, right):
-                entry = {
-                    'abs_offset': int(audio_slice[i]['abs_offset']),
-                    'size1': int(audio_slice[i]['size1']),
-                    'size2': int(audio_slice[i]['size2']),
-                    'pts': int(audio_slice[i]['pts']),
-                    'track': int(audio_slice[i]['track']),
-                }
-                chunk_entries[entry['track']].append(entry)
-
-            chunks.append(dict(chunk_entries))
-
-        return chunks

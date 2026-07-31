@@ -1,11 +1,8 @@
 """
-moov_builder.py – финальная версия для DaletProxy V6.
+moov_builder.py – финальная версия для ProxyPlayer v1.
 Содержит полный набор функций v5 + инкрементальные обновления +
 быстрая фильтрация fast_video_records и адаптивное построение IDR-карты.
-Добавлена функция rebuild_audio_chunks_from для умного обновления аудиочанков
-с текущей позиции воспроизведения.
-Исправлен расчёт size2 в build_audio_tracks – теперь size2 вычисляется
-для каждой дорожки отдельно (векторизованно).
+Добавлен предвычисленный индекс аудиочанков для ускорения построения.
 """
 
 import logging
@@ -169,6 +166,29 @@ def build_chunks_in_range(video_records, mdat_end, start_chunk=0, num_chunks=120
 
     return np.array(chunk_offs_list, dtype=np.int64), np.array(chunk_sizes_list, dtype=np.int64)
 
+def build_chunks_from_cached_offsets(video_slice, cached_offsets, mdat_end):
+    """Версия build_chunks_in_range с предвычисленными смещениями."""
+    if len(video_slice) == 0:
+        return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
+    
+    offs = cached_offsets
+    n = len(video_slice)
+    nchunks = (n + FRAMES_PER_CHUNK - 1) // FRAMES_PER_CHUNK
+    chunk_offs = np.empty(nchunks, dtype=np.int64)
+    chunk_sizes = np.empty(nchunks, dtype=np.int64)
+    
+    for i in range(nchunks):
+        start_frame = i * FRAMES_PER_CHUNK
+        chunk_offs[i] = offs[start_frame]
+        next_frame = min(start_frame + FRAMES_PER_CHUNK, n)
+        if next_frame < n:
+            next_off = offs[next_frame]
+        else:
+            next_off = np.uint64(mdat_end)
+        chunk_sizes[i] = max(0, int(next_off) - int(chunk_offs[i]))
+    
+    return chunk_offs, chunk_sizes
+
 # ----------------------------------------------------------------------
 # Аудио (исправленный расчёт size2, векторизован)
 # ----------------------------------------------------------------------
@@ -203,14 +223,10 @@ def build_audio_tracks(c9_records, track_filter: List[int] = None):
     for t in track_filter:
         idx = np.where(audio_arr['track'] == t)[0]
         if len(idx) > 1:
-            # next_offset для всех кроме последнего
             next_offs = audio_arr['abs_offset'][idx[1:]]
-            # конец текущей записи
             current_ends = audio_arr['abs_offset'][idx[:-1]] + audio_arr['size1'][idx[:-1]]
             audio_arr['size2'][idx[:-1]] = next_offs - current_ends
-        # size2 последней записи остаётся 0
 
-    # Убираем возможные отрицательные значения
     audio_arr['size2'] = np.clip(audio_arr['size2'], 0, None)
     return audio_arr
 
@@ -233,7 +249,6 @@ def incremental_append_audio_tracks(
     merged = np.concatenate([existing_audio, new_audio])
     merged.sort(order='abs_offset')
 
-    # Обновляем size2 для всех дорожек после слияния
     for t in track_filter:
         idx = np.where(merged['track'] == t)[0]
         if len(idx) > 1:
@@ -250,17 +265,13 @@ def build_audio_chunks_from_structured(audio_arr: np.ndarray, num_video_chunks: 
     if len(audio_arr) == 0 or num_video_chunks == 0:
         return [{} for _ in range(num_video_chunks)]
 
-    pts_array = audio_arr['pts']
+    # Предвычисляем номер чанка для каждой аудиозаписи
+    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
     chunks = [{} for _ in range(num_video_chunks)]
 
-    for chunk_idx in range(num_video_chunks):
-        start_pts = chunk_idx * SAMPLES_PER_CHUNK
-        end_pts = start_pts + SAMPLES_PER_CHUNK
-        left = np.searchsorted(pts_array, start_pts, side='left')
-        right = np.searchsorted(pts_array, end_pts, side='left')
-
-        chunk_entries = defaultdict(list)
-        for i in range(left, right):
+    for i in range(len(audio_arr)):
+        chunk_idx = chunk_indices[i]
+        if 0 <= chunk_idx < num_video_chunks:
             entry = {
                 'abs_offset': int(audio_arr[i]['abs_offset']),
                 'size1': int(audio_arr[i]['size1']),
@@ -268,9 +279,10 @@ def build_audio_chunks_from_structured(audio_arr: np.ndarray, num_video_chunks: 
                 'pts': int(audio_arr[i]['pts']),
                 'track': int(audio_arr[i]['track']),
             }
-            chunk_entries[entry['track']].append(entry)
-
-        chunks[chunk_idx] = dict(chunk_entries)
+            track = entry['track']
+            if track not in chunks[chunk_idx]:
+                chunks[chunk_idx][track] = []
+            chunks[chunk_idx][track].append(entry)
 
     return chunks
 
@@ -281,20 +293,18 @@ def build_audio_chunks_in_range(audio_arr: np.ndarray, start_chunk: int, num_chu
     """
     Построение аудиочанков только для указанного диапазона чанков.
     Возвращает список словарей, по длине равный num_chunks.
+    Использует предвычисленный индекс.
     """
     if len(audio_arr) == 0 or num_chunks == 0:
         return [{} for _ in range(num_chunks)]
 
-    pts_array = audio_arr['pts']
-    chunks = []
-    for chunk_idx in range(start_chunk, start_chunk + num_chunks):
-        start_pts = chunk_idx * SAMPLES_PER_CHUNK
-        end_pts = start_pts + SAMPLES_PER_CHUNK
-        left = np.searchsorted(pts_array, start_pts, side='left')
-        right = np.searchsorted(pts_array, end_pts, side='left')
+    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+    chunks = [{} for _ in range(num_chunks)]
 
-        chunk_entries = defaultdict(list)
-        for i in range(left, right):
+    for i in range(len(audio_arr)):
+        global_chunk = chunk_indices[i]
+        local_chunk = global_chunk - start_chunk
+        if 0 <= local_chunk < num_chunks:
             entry = {
                 'abs_offset': int(audio_arr[i]['abs_offset']),
                 'size1': int(audio_arr[i]['size1']),
@@ -302,9 +312,10 @@ def build_audio_chunks_in_range(audio_arr: np.ndarray, start_chunk: int, num_chu
                 'pts': int(audio_arr[i]['pts']),
                 'track': int(audio_arr[i]['track']),
             }
-            chunk_entries[entry['track']].append(entry)
-
-        chunks.append(dict(chunk_entries))
+            track = entry['track']
+            if track not in chunks[local_chunk]:
+                chunks[local_chunk][track] = []
+            chunks[local_chunk][track].append(entry)
 
     return chunks
 
@@ -315,23 +326,17 @@ def incremental_build_audio_chunks_v2(existing_chunks, audio_arr, num_video_chun
     и достраивает все новые до num_video_chunks-1.
     """
     if num_video_chunks <= len(existing_chunks):
-        # количество чанков не увеличилось – обновим хвост
         start_update = max(0, len(existing_chunks) - AUDIO_CHUNK_TAIL_UPDATE)
     else:
-        # появились новые чанки – обновляем хвост и добавим новые
         start_update = max(0, len(existing_chunks) - AUDIO_CHUNK_TAIL_UPDATE)
 
-    pts_array = audio_arr['pts']
-    # Всё до start_update остаётся без изменений
+    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
     chunks = existing_chunks[:start_update]
 
     for chunk_idx in range(start_update, num_video_chunks):
-        start_pts = chunk_idx * SAMPLES_PER_CHUNK
-        end_pts = start_pts + SAMPLES_PER_CHUNK
-        left = np.searchsorted(pts_array, start_pts, side='left')
-        right = np.searchsorted(pts_array, end_pts, side='left')
+        mask = chunk_indices == chunk_idx
         chunk_entries = defaultdict(list)
-        for i in range(left, right):
+        for i in np.where(mask)[0]:
             entry = {
                 'abs_offset': int(audio_arr[i]['abs_offset']),
                 'size1': int(audio_arr[i]['size1']),
@@ -350,15 +355,12 @@ def rebuild_audio_chunks_from(audio_arr, existing_chunks, start_chunk_idx, num_v
     """
     if start_chunk_idx >= num_video_chunks:
         return existing_chunks
-    pts_array = audio_arr['pts']
-    chunks = existing_chunks[:start_chunk_idx]  # сохраняем старые
+    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+    chunks = existing_chunks[:start_chunk_idx]
     for chunk_idx in range(start_chunk_idx, num_video_chunks):
-        start_pts = chunk_idx * SAMPLES_PER_CHUNK
-        end_pts = start_pts + SAMPLES_PER_CHUNK
-        left = np.searchsorted(pts_array, start_pts, side='left')
-        right = np.searchsorted(pts_array, end_pts, side='left')
+        mask = chunk_indices == chunk_idx
         chunk_entries = defaultdict(list)
-        for i in range(left, right):
+        for i in np.where(mask)[0]:
             entry = {
                 'abs_offset': int(audio_arr[i]['abs_offset']),
                 'size1': int(audio_arr[i]['size1']),
@@ -427,31 +429,27 @@ def build_idr_map(
 
     Возвращает индексы в video_records.
     """
-    # Быстрый путь без проверки (старое поведение)
     if reader is None:
         return get_idr_indices_from_mmap(video_records)
 
-    # Сбор кандидатов (f7=27-30)
     idr_mask = (video_records['f7'] >= 27) & (video_records['f7'] <= 30)
     candidates = np.where(idr_mask)[0]
 
     if len(candidates) == 0:
         return candidates
 
-    # Если проверять все (для отладки) или кандидатов мало
     check_count = len(candidates) if check_all else min(len(candidates), initial_check)
 
     confirmed = []
     for i, idx in enumerate(candidates[:check_count]):
         rec = video_records[idx]
         abs_off = int(rec['f1']) - 4 + int(rec['f2']) * SEGMENT_SIZE
-        # Размер кадра: до следующей записи
         if idx + 1 < len(video_records):
             next_rec = video_records[idx + 1]
             next_off = int(next_rec['f1']) - 4 + int(next_rec['f2']) * SEGMENT_SIZE
             frame_size = next_off - abs_off
         else:
-            frame_size = 1_000_000  # последний кадр
+            frame_size = 1_000_000
         if frame_size <= 0:
             frame_size = 1_000_000
         if _has_nal_type5_in_frame(reader, abs_off, frame_size):
@@ -461,16 +459,13 @@ def build_idr_map(
         logger.warning("Не найдено ни одного IDR через NAL type 5 – перемотка будет недоступна")
         return np.array([], dtype=np.int64)
 
-    # Если подтверждённых мало, экстраполяция невозможна – возвращаем только подтверждённые
     if len(confirmed) < 2:
         logger.info(f"Подтверждён только один IDR, экстраполяция не выполняется")
         return np.array(confirmed, dtype=np.int64)
 
-    # Определяем шаг по подтверждённым
     step = int(np.median(np.diff(confirmed)))
     step = max(step, 1)
 
-    # Экстраполяция оставшихся кандидатов
     last_confirmed = confirmed[-1]
     extrapolated = []
     for idx in candidates[check_count:]:
@@ -489,7 +484,7 @@ def _has_nal_type5_in_frame(reader, abs_offset: int, frame_size: int) -> bool:
     Проверяет наличие NAL unit type 5 в кадре размером frame_size.
     Читает данные до конца кадра (но не более 2 МБ для защиты).
     """
-    read_size = min(frame_size, 2_000_000)  # максимум 2 МБ на кадр
+    read_size = min(frame_size, 2_000_000)
     if read_size <= 0:
         return False
     try:
