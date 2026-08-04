@@ -7,7 +7,7 @@ import logging
 
 
 def setup_logging(
-    level: int = logging.INFO,
+    level: int = logging.DEBUG,
     log_file: str = "player.log",
     capture_stdout: bool = True,
     console_output: bool = False,

@@ -3,6 +3,7 @@ win_sequential_reader.py – низкоуровневое чтение файл�
 с флагом FILE_FLAG_SEQUENTIAL_SCAN для оптимизации последовательного доступа.
 Поддерживает синхронный и асинхронный (overlapped) режимы.
 Версия production: подробное логирование, обработка всех ошибок.
+Исправление: все размеры и смещения явно приводятся к int для совместимости с ctypes.
 """
 
 import time
@@ -152,6 +153,8 @@ class WinSequentialReader:
         if self._handle is None or self._handle == INVALID_HANDLE_VALUE:
             logger.error("Попытка чтения с невалидным HANDLE")
             return b''
+        # Явное приведение к int для безопасности ctypes
+        size = int(size)
         buf = ctypes.create_string_buffer(size)
         bytes_read = wintypes.DWORD(0)
 
@@ -193,7 +196,7 @@ class WinSequentialReader:
 
     def seek(self, offset: int):
         """Позиционирует файловый указатель на offset (только для синхронного режима)."""
-        li = ctypes.c_longlong(offset)
+        li = ctypes.c_longlong(int(offset))
         if not SetFilePointerEx(self._handle, li, None, 0):
             err = GetLastError()
             logger.error(f"Ошибка позиционирования: код {err}")
@@ -204,16 +207,17 @@ class WinSequentialReader:
         """
         Последовательное чтение блока размером size с позиции offset.
         Автоматически разбивает на чанки по 1 МБ с повторами.
+        Все аргументы явно приводятся к int для совместимости с ctypes.
         """
         chunk_size = 1024 * 1024  # 1 МБ
         data = bytearray()
-        remaining = size
-        current_offset = offset
+        remaining = int(size)            # явное приведение
+        current_offset = int(offset)     # явное приведение
         max_retries = 3
 
-        logger.debug(f"Начало последовательного чтения: offset={offset}, size={size}")
+        logger.debug(f"Начало последовательного чтения: offset={current_offset}, size={remaining}")
         while remaining > 0:
-            to_read = min(chunk_size, remaining)
+            to_read = int(min(chunk_size, remaining))   # явное приведение
             block = b''
             for attempt in range(max_retries):
                 try:

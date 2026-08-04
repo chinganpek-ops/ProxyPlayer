@@ -1,8 +1,11 @@
-#!/usr/bin/env python3
 """
-idx_cache.py – локальный кэш индекса (.idx) с поддержкой memory-mapped файлов (V6).
-Только функции для работы с зеркалом и mmap. Всё лишнее удалено.
-Единое зеркало для всех процессов (без PID в имени файла).
+idx_cache.py – локальный кэш индекса (.idx) с поддержкой memory-mapped файлов.
+Версия для ProxyPlayer v1 с архитектурой IndexService.
+
+Основные изменения:
+- prepare_mirror() теперь вызывается только IndexService (процессом-менеджером).
+- Плееры используют open_idx_mmap() напрямую, получая путь к уже готовому зеркалу.
+- Добавлена get_mirror_path() – возвращает путь к зеркалу без попытки докачки.
 """
 
 import os
@@ -10,7 +13,7 @@ import mmap
 import logging
 import threading
 from pathlib import Path
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional
 
 import numpy as np
 
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 # Константы путей
 # ------------------------------------------------------------------
-CACHE_DIR_NAME = "DaletProxyPlayer"
+CACHE_DIR_NAME = "ProxyPlayer"
 CACHE_SUBDIR = "cache"
 MIRROR_SUBDIR = "idx_mirror"
 
@@ -31,10 +34,10 @@ TAIL_SAFETY = 67          # перекрытие для целостности �
 # ------------------------------------------------------------------
 # Блокировки и кэш mmap
 # ------------------------------------------------------------------
-_locks: Dict[Path, threading.Lock] = {}
+_locks: dict[Path, threading.Lock] = {}
 _locks_lock = threading.Lock()
 
-_mmap_cache: Dict[Path, mmap.mmap] = {}
+_mmap_cache: dict[Path, mmap.mmap] = {}
 _mmap_cache_lock = threading.Lock()
 
 
@@ -72,7 +75,7 @@ def _get_lock(path: Path) -> threading.Lock:
 
 
 # ------------------------------------------------------------------
-# Синхронизация зеркала
+# Синхронизация зеркала (только для IndexService)
 # ------------------------------------------------------------------
 def _sync_mirror(reader: WinSequentialReader, mirror_path: Path, remote_size: int,
                  local_size: int, tail_data: bytes = b'') -> int:
@@ -117,8 +120,7 @@ def _sync_mirror(reader: WinSequentialReader, mirror_path: Path, remote_size: in
 def prepare_mirror(idx_path: Path) -> Path:
     """
     Синхронизирует локальное зеркало с удалённым idx-файлом.
-    Если локальное зеркало меньше удалённого — докачивает недостающие байты.
-    Возвращает путь к локальному зеркалу.
+    Вызывается ТОЛЬКО IndexService. Плееры не должны вызывать эту функцию.
     """
     mirror_path = _mirror_path(idx_path)
     lock = _get_lock(mirror_path)
@@ -140,8 +142,16 @@ def prepare_mirror(idx_path: Path) -> Path:
         return mirror_path
 
 
+def get_mirror_path(idx_path: Path) -> Path:
+    """
+    Возвращает путь к локальному зеркалу БЕЗ попытки докачки.
+    Используется плеерами для открытия уже готового зеркала.
+    """
+    return _mirror_path(idx_path)
+
+
 # ------------------------------------------------------------------
-# mmap-функции
+# mmap-функции (используются всеми)
 # ------------------------------------------------------------------
 def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -184,13 +194,11 @@ def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
         # --- Построение mm_193 ---
         cand_193 = np.where(arr_u4 == 0x193)[0]
         cand_193 = cand_193[cand_193 + 17 <= len(arr_u4)]
-        # Фильтр: f2 < 256 и f7 <= 31 (реальные видео-кадры, исключаем теневые аудио)
         valid_193 = cand_193[(arr_u4[cand_193 + 1] > 0) & (arr_u4[cand_193 + 2] < 256) & (arr_u4[cand_193 + 7] <= 31)]
 
         if len(valid_193) == 0:
             mm_193 = np.empty(0, dtype=DTYPE_193)
         else:
-            # Правильное построение: копируем только строки, соответствующие валидным индексам
             indices = valid_193[:, None] + np.arange(17)
             mm_193 = arr_u4[indices].copy().view(DTYPE_193).ravel()
 
@@ -205,7 +213,6 @@ def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
             indices = valid_c9[:, None] + np.arange(17)
             mm_c9 = arr_u4[indices].copy().view(DTYPE_C9).ravel()
 
-        # Кэшируем mmap, чтобы он не был закрыт сборщиком мусора
         with _mmap_cache_lock:
             _mmap_cache[mirror_path] = mm
 

@@ -1,7 +1,7 @@
 """
 chunk_pipeline.py – трёхэтапный конвейер загрузки и декодирования чанков.
-Работает с локальными индексами чанков внутри IndexWindow.
-Добавлены защитные проверки и контроль заполнения буфера.
+v1.3 – увеличенные очереди для предотвращения блокировок при старте,
+       расширенное логирование для диагностики зависаний.
 """
 
 import queue
@@ -28,9 +28,10 @@ logger = logging.getLogger(__name__)
 VideoPacket = Tuple[bytes, int]                       # (data, pts)
 AudioPacket = Tuple[int, bytes, bytes, int, bool]     # (track, data1, data2, pts, need_fade)
 
-RAW_QUEUE_SIZE = 3
-VIDEO_QUEUE_SIZE = 5
-AUDIO_QUEUE_SIZE = 5
+# Увеличены для предотвращения блокировок при старте
+RAW_QUEUE_SIZE = 10
+VIDEO_QUEUE_SIZE = 10
+AUDIO_QUEUE_SIZE = 10
 
 
 class Stage(threading.Thread):
@@ -43,112 +44,145 @@ class Stage(threading.Thread):
 
 
 class ReaderStage(Stage):
-    def __init__(self, mp4_path: Path, window: IndexWindow,
+    def __init__(self, mp4_path: Path, pipeline: 'ChunkPipeline',
                  scheduler: StreamScheduler, output_queue: queue.Queue,
                  adaptive: AdaptiveChunkStrategy):
         super().__init__("ReaderStage")
         self._reader = WinSequentialReader(mp4_path, rate_limit=0, overlapped=False)
-        self._window = window
+        self._pipeline = pipeline
         self._scheduler = scheduler
         self._output_queue = output_queue
         self._adaptive = adaptive
+        logger.info("ReaderStage инициализирован")
 
     def run(self):
+        logger.info("ReaderStage запущен")
         while not self.stop_event.is_set():
             local_chunk = self._scheduler.get_next_chunk()
             if local_chunk is None:
                 self.stop_event.wait(0.1)
                 continue
 
-            if local_chunk < 0 or local_chunk >= self._window.total_chunks:
+            window = self._pipeline.get_window_snapshot()
+
+            if local_chunk < 0 or local_chunk >= window.total_chunks:
                 self._scheduler.mark_chunk_failed(local_chunk)
                 continue
 
-            off = int(self._window.chunk_offsets[local_chunk])
-            size = int(self._window.chunk_sizes[local_chunk])
+            first_local_frame = local_chunk * FRAMES_PER_CHUNK
+            if first_local_frame >= len(window.cached_offsets):
+                self._scheduler.mark_chunk_failed(local_chunk)
+                continue
+
+            chunk_start_offset = int(window.cached_offsets[first_local_frame])
+            next_local_frame = min(first_local_frame + FRAMES_PER_CHUNK, len(window.video_records))
+            if next_local_frame < len(window.cached_offsets):
+                chunk_end_offset = int(window.cached_offsets[next_local_frame])
+            else:
+                chunk_end_offset = chunk_start_offset + window.chunk_sizes[local_chunk]
+
+            size = max(0, chunk_end_offset - chunk_start_offset)
+            size = int(size)   # совместимость с ctypes
             if size <= 0:
                 self._scheduler.mark_chunk_failed(local_chunk)
                 continue
 
+            logger.debug(f"Чтение чанка {local_chunk}, смещение={chunk_start_offset}, размер={size}")
             try:
-                data = self._reader.read_sequential(off, size)
+                data = self._reader.read_sequential(chunk_start_offset, size)
                 if data:
-                    self._output_queue.put((local_chunk, data), timeout=1.0)
+                    self._output_queue.put((local_chunk, data, window), timeout=2.0)
+                    logger.debug(f"Чанк {local_chunk} прочитан и помещён в очередь")
                 else:
                     self._scheduler.mark_chunk_failed(local_chunk)
+            except queue.Full:
+                logger.warning("raw_queue переполнена, повторная попытка для чанка %d", local_chunk)
+                self.stop_event.wait(0.1)
             except Exception as e:
-                logger.error(f"Ошибка чтения чанка {local_chunk}: {e}")
+                logger.error(f"Ошибка чтения чанка {local_chunk}: {e}", exc_info=True)
                 self._scheduler.mark_chunk_failed(local_chunk)
 
     def stop(self):
         super().stop()
         self._reader.close()
+        logger.info("ReaderStage остановлен")
 
 
 class DemuxerStage(Stage):
-    def __init__(self, window: IndexWindow, input_queue: queue.Queue,
+    def __init__(self, input_queue: queue.Queue,
                  video_queue: queue.Queue, audio_queue: queue.Queue):
         super().__init__("DemuxerStage")
-        self._window = window
         self._input_queue = input_queue
         self._video_queue = video_queue
         self._audio_queue = audio_queue
+        logger.info("DemuxerStage инициализирован")
 
     def run(self):
+        logger.info("DemuxerStage запущен")
         while not self.stop_event.is_set():
             try:
-                local_chunk, raw_data = self._input_queue.get(timeout=0.5)
+                local_chunk, raw_data, window_snapshot = self._input_queue.get(timeout=0.5)
+                logger.debug(f"DemuxerStage получил чанк {local_chunk}")
             except queue.Empty:
                 continue
 
             try:
-                v_packets, a_packets = self._demux(local_chunk, raw_data)
+                v_packets, a_packets = self._demux(local_chunk, raw_data, window_snapshot)
                 if v_packets:
-                    self._video_queue.put((local_chunk, v_packets), timeout=1.0)
+                    self._safe_put(self._video_queue, (local_chunk, v_packets), "video")
                 if a_packets:
-                    self._audio_queue.put((local_chunk, a_packets), timeout=1.0)
+                    self._safe_put(self._audio_queue, (local_chunk, a_packets), "audio")
             except Exception as e:
-                logger.error(f"Ошибка демукса чанка {local_chunk}: {e}")
+                logger.error(f"Ошибка демукса чанка {local_chunk}: {e}", exc_info=True)
 
-    def _demux(self, local_chunk: int, raw_data: bytes) -> Tuple[List[VideoPacket], List[AudioPacket]]:
+    def _safe_put(self, q: queue.Queue, item, qname: str, max_retries=5, retry_delay=0.2):
+        for attempt in range(max_retries):
+            try:
+                q.put(item, timeout=1.0)
+                return
+            except queue.Full:
+                logger.warning("Очередь %s переполнена (попытка %d/%d)", qname, attempt+1, max_retries)
+                self.stop_event.wait(retry_delay)
+        logger.error("Не удалось поместить в очередь %s после %d попыток, отбрасываю", qname, max_retries)
+
+    def _demux(self, local_chunk: int, raw_data: bytes, window: IndexWindow) -> Tuple[List[VideoPacket], List[AudioPacket]]:
         video_packets = []
         audio_packets = []
 
-        global_start_frame = (self._window.window_start_chunk + local_chunk) * FRAMES_PER_CHUNK
-        chunk_start_offset = int(self._window.chunk_offsets[local_chunk])
-        cached_offs = self._window.cached_offsets
+        global_start_frame = (window.window_start_chunk + local_chunk) * FRAMES_PER_CHUNK
+        first_local_frame = local_chunk * FRAMES_PER_CHUNK
 
-        # Видео
+        if first_local_frame >= len(window.cached_offsets):
+            return video_packets, audio_packets
+        chunk_start_offset = int(window.cached_offsets[first_local_frame])
+        cached_offs = window.cached_offsets
+
         for i in range(FRAMES_PER_CHUNK):
             abs_idx = global_start_frame + i
-            local_frame = abs_idx - self._window.window_start_frame
-            if local_frame < 0 or local_frame >= len(self._window.video_records):
+            local_frame = first_local_frame + i
+            if local_frame < 0 or local_frame >= len(window.video_records):
                 continue
-
-            rec = self._window.video_records[local_frame]
-            if cached_offs is not None and local_frame < len(cached_offs):
-                abs_off = int(cached_offs[local_frame])
-            else:
-                abs_off = int(rec['f1']) - 4 + int(rec['f2']) * SEGMENT_SIZE
+            if local_frame >= len(cached_offs):
+                continue
+            abs_off = int(cached_offs[local_frame])
 
             if i < FRAMES_PER_CHUNK - 1:
                 next_local = local_frame + 1
-                if next_local < len(self._window.video_records):
-                    if cached_offs is not None and next_local < len(cached_offs):
-                        next_off = int(cached_offs[next_local])
-                    else:
-                        next_rec = self._window.video_records[next_local]
-                        next_off = int(next_rec['f1']) - 4 + int(next_rec['f2']) * SEGMENT_SIZE
+                if next_local < len(cached_offs):
+                    next_off = int(cached_offs[next_local])
                     size = next_off - abs_off
                 else:
                     size = 0
             else:
-                chunk_end = chunk_start_offset + int(self._window.chunk_sizes[local_chunk])
+                next_local = local_frame + 1
+                if next_local < len(cached_offs):
+                    chunk_end = int(cached_offs[next_local])
+                else:
+                    chunk_end = chunk_start_offset + len(raw_data)
                 size = chunk_end - abs_off
 
             if size <= 0:
                 continue
-
             rel_start = abs_off - chunk_start_offset
             if rel_start < 0 or rel_start + size > len(raw_data):
                 continue
@@ -157,9 +191,8 @@ class DemuxerStage(Stage):
             pts = abs_idx * SAMPLES_PER_VIDEO_FRAME
             video_packets.append((sample, pts))
 
-        # Аудио
-        if local_chunk < len(self._window.audio_chunks):
-            audio_chunk = self._window.audio_chunks[local_chunk]
+        if local_chunk < len(window.audio_chunks):
+            audio_chunk = window.audio_chunks[local_chunk]
             if audio_chunk:
                 for track_id, entries in audio_chunk.items():
                     if track_id == 0 or track_id > 3:
@@ -190,11 +223,14 @@ class VideoDecoderStage(Stage):
         self._decoder = decoder
         self._buffer = video_buffer
         self._input_queue = input_queue
+        logger.info("VideoDecoderStage инициализирован")
 
     def run(self):
+        logger.info("VideoDecoderStage запущен")
         while not self.stop_event.is_set():
             try:
-                _, packets = self._input_queue.get(timeout=0.5)
+                local_chunk, packets = self._input_queue.get(timeout=0.5)
+                logger.debug(f"VideoDecoderStage получил чанк {local_chunk}, пакетов: {len(packets)}")
             except queue.Empty:
                 continue
 
@@ -205,12 +241,19 @@ class VideoDecoderStage(Stage):
                         continue
                     frames = self._decoder.decode_sample(filtered)
                     for frame in frames:
-                        while not self.stop_event.is_set():
-                            if self._buffer.try_push(frame, pts):
-                                break
-                            self.stop_event.wait(0.01)
+                        self._push_frame(frame, pts)
                 except Exception as e:
                     logger.debug(f"Ошибка декодирования видео: {e}")
+
+    def _push_frame(self, frame: np.ndarray, pts: int):
+        deadline = time.monotonic() + 5.0
+        while not self.stop_event.is_set():
+            if self._buffer.try_push(frame, pts):
+                return
+            if time.monotonic() > deadline:
+                logger.warning("Видеобуфер переполнен, кадр отброшен (pts=%d)", pts)
+                return
+            self.stop_event.wait(0.01)
 
 
 class AudioDecoderStage(Stage):
@@ -221,11 +264,14 @@ class AudioDecoderStage(Stage):
         self._audio_buffers = audio_buffers
         self._input_queue = input_queue
         self._fade_len = 8
+        logger.info("AudioDecoderStage инициализирован")
 
     def run(self):
+        logger.info("AudioDecoderStage запущен")
         while not self.stop_event.is_set():
             try:
-                _, packets = self._input_queue.get(timeout=0.5)
+                local_chunk, packets = self._input_queue.get(timeout=0.5)
+                logger.debug(f"AudioDecoderStage получил чанк {local_chunk}, пакетов: {len(packets)}")
             except queue.Empty:
                 continue
 
@@ -247,10 +293,17 @@ class AudioDecoderStage(Stage):
                 if need_fade and len(pcm_block) >= self._fade_len:
                     pcm_block[:self._fade_len] *= np.linspace(0, 1, self._fade_len)
 
-                while not self.stop_event.is_set():
-                    if self._audio_buffers.try_write(track_id, pcm_block, pts):
-                        break
-                    self.stop_event.wait(0.01)
+                self._push_audio(track_id, pcm_block, pts)
+
+    def _push_audio(self, track_id: int, pcm_block: np.ndarray, pts: int):
+        deadline = time.monotonic() + 5.0
+        while not self.stop_event.is_set():
+            if self._audio_buffers.try_write(track_id, pcm_block, pts):
+                return
+            if time.monotonic() > deadline:
+                logger.warning("Аудиобуфер переполнен для дорожки %d, кадр отброшен (pts=%d)", track_id, pts)
+                return
+            self.stop_event.wait(0.01)
 
 
 class ChunkPipeline:
@@ -258,11 +311,13 @@ class ChunkPipeline:
                  video_decoder: Decoder, audio_decoders: List[AudioDecoder],
                  video_buffer: FrameRingBuffer, audio_buffers: MultiTrackAudioBuffer):
         self._mp4_path = mp4_path
-        self._window = window
         self._video_decoder = video_decoder
         self._audio_decoders = audio_decoders
         self._video_buffer = video_buffer
         self._audio_buffers = audio_buffers
+
+        self._window_lock = threading.Lock()
+        self._window = window
 
         self._scheduler = StreamScheduler(AdaptiveChunkStrategy())
         self._scheduler.set_buffer(self._video_buffer)
@@ -273,12 +328,21 @@ class ChunkPipeline:
 
         self._stages: List[Stage] = []
 
-    def start(self, start_local_chunk: int):
-        self._scheduler.set_normal_mode(start_local_chunk, self._window.total_chunks)
+    def get_window_snapshot(self) -> IndexWindow:
+        with self._window_lock:
+            return self._window
 
-        reader = ReaderStage(self._mp4_path, self._window, self._scheduler,
+    def update_window(self, new_window: IndexWindow):
+        with self._window_lock:
+            self._window = new_window
+            self._scheduler.set_normal_mode(0, new_window.total_chunks)
+
+    def start(self, start_local_chunk: int):
+        self._scheduler.set_normal_mode(start_local_chunk, self.get_window_snapshot().total_chunks)
+
+        reader = ReaderStage(self._mp4_path, self, self._scheduler,
                              self._raw_queue, AdaptiveChunkStrategy())
-        demuxer = DemuxerStage(self._window, self._raw_queue,
+        demuxer = DemuxerStage(self._raw_queue,
                                self._video_queue, self._audio_queue)
         video_dec = VideoDecoderStage(self._video_decoder, self._video_buffer,
                                       self._video_queue)
@@ -288,14 +352,13 @@ class ChunkPipeline:
         self._stages = [reader, demuxer, video_dec, audio_dec]
         for stage in self._stages:
             stage.start()
+        logger.info("ChunkPipeline: все стадии запущены")
 
     def stop(self):
+        logger.info("ChunkPipeline: остановка стадий")
         for stage in self._stages:
             stage.stop()
         for stage in self._stages:
             stage.join(timeout=2.0)
         self._stages.clear()
-
-    def update_window(self, new_window: IndexWindow):
-        self._window = new_window
-        self._scheduler.set_normal_mode(0, new_window.total_chunks)
+        logger.info("ChunkPipeline: все стадии остановлены")

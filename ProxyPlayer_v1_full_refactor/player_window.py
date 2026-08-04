@@ -2,6 +2,8 @@
 """
 player_window.py – главное окно плеера и менеджер окон (ProxyPlayer v1).
 Использует StreamController. Сохраняет весь функционал v6.
+Добавлена поддержка IndexService: менеджер вызывает prepare_mirror и передаёт
+путь к зеркалу плееру через аргумент --mirror.
 """
 
 import sys
@@ -16,7 +18,7 @@ from PyQt5.QtCore import Qt, QTimer, QProcess, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QFileDialog, QAction, QDesktopWidget, QToolBar, QPushButton,
-    QSystemTrayIcon, QMenu, QStyle
+    QSystemTrayIcon, QMenu, QStyle, QDialog
 )
 from PyQt5.QtGui import QIcon, QMouseEvent
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket, QTcpServer, QTcpSocket
@@ -26,6 +28,7 @@ from core.stream_controller import StreamController
 from config.config import save_config
 from output.video_widget import GLVideoWidget
 from ui.controls import build_controls
+from index.idx_cache import prepare_mirror  # <-- только менеджер вызывает
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +77,14 @@ class OpenPlayerWorker(QThread):
 
 
 class PlayerWidget(QWidget):
-    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, parent=None):
+    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, 
+                 mirror_path: str = None, parent=None):
         super().__init__(parent)
         self.mp4_path = mp4_path
         self.use_moov = use_moov
         self.config = config
+        self.mirror_path = mirror_path  # путь к готовому зеркалу (если передан)
+        self._playback_started = False  # флаг, предотвращающий повторный запуск
 
         self.setStyleSheet("""
             background-color: #2b2b2b;
@@ -101,7 +107,6 @@ class PlayerWidget(QWidget):
 
         if not use_moov:
             self.ref_path, self.idx_path = self._find_related_files(mp4_path)
-            logger.debug(f"PlayerWidget: ref={self.ref_path}, idx={self.idx_path}")
             if not self.idx_path.exists():
                 QMessageBox.critical(self, "Ошибка", f"Отсутствует .idx для {mp4_path}")
                 raise FileNotFoundError(f"Missing .idx for {mp4_path}")
@@ -125,14 +130,12 @@ class PlayerWidget(QWidget):
         self._update_render_interval()
 
         self.video_widget.show_placeholder()
-        # Ждём готовности StreamController с таймаутом
         if not self.player._ready.wait(timeout=120):
             QMessageBox.critical(self, "Ошибка", "Не удалось инициализировать плеер за 120 секунд")
             self.player.close()
             raise RuntimeError("StreamController initialization timeout")
-        self.player.start_playback()
-        if not self.render_timer.isActive():
-            self.render_timer.start()
+        
+        # Плеер готов, но воспроизведение ещё не запущено – ждём вызова start_playback()
         self.setFocusPolicy(Qt.StrongFocus)
 
     @staticmethod
@@ -169,6 +172,7 @@ class PlayerWidget(QWidget):
             gpu_mode=self.config.get('use_gpu_decoder', 'off'),
             audio_delay_ms=self.config.get('audio_delay_ms', 0),
             start_from_live=True,
+            mirror_path=self.mirror_path,   # передаём готовое зеркало
         )
 
     def _init_ui(self):
@@ -246,26 +250,31 @@ class PlayerWidget(QWidget):
         self.tc_input.hide(); self.tc_label.show(); self.setFocus()
 
     def _update_frame(self):
-        if self._seeking: return
         try:
+            if self._seeking:
+                return
+            if self._active_player is None:
+                return
             frame = self._active_player.get_display_frame()
-            if frame is not None and frame.size > 0: self.video_widget.set_frame(frame)
-        except Exception as e: logger.error(f"Error getting frame: {e}")
-        if isinstance(self._active_player, StreamController):
-            audio_clock = self.player.audio_clock
-            frame_idx = audio_clock // 1920
-            total = self.player.total_frames
-            if total > 1:
-                max_slider = total - 1
-                if not self.player._finalized: max_slider = max(0, total - 1600)
-                if self.slider.maximum() != max_slider: self.slider.setRange(0, max_slider)
-            self.slider.blockSignals(True); self.slider.setValue(frame_idx); self.slider.blockSignals(False)
-        self._update_tc_label()
-        if hasattr(self._active_player, 'get_seek_speed_display'):
-            d = self._active_player.get_seek_speed_display()
-            self.play_pause_btn.setText(d if "x1" not in d else ("⏸ Pause" if self._active_player.playing else "▶ Play"))
-        else:
-            self.play_pause_btn.setText("⏸ Pause" if self._active_player.playing else "▶ Play")
+            if frame is not None and frame.size > 0:
+                self.video_widget.set_frame(frame)
+            if isinstance(self._active_player, StreamController):
+                audio_clock = self.player.audio_clock
+                frame_idx = audio_clock // 1920
+                total = self.player.total_frames
+                if total > 1:
+                    max_slider = total - 1
+                    if not self.player._finalized: max_slider = max(0, total - 1600)
+                    if self.slider.maximum() != max_slider: self.slider.setRange(0, max_slider)
+                self.slider.blockSignals(True); self.slider.setValue(frame_idx); self.slider.blockSignals(False)
+            self._update_tc_label()
+            if hasattr(self._active_player, 'get_seek_speed_display'):
+                d = self._active_player.get_seek_speed_display()
+                self.play_pause_btn.setText(d if "x1" not in d else ("⏸ Pause" if self._active_player.playing else "▶ Play"))
+            else:
+                self.play_pause_btn.setText("⏸ Pause" if self._active_player.playing else "▶ Play")
+        except Exception as e:
+            logger.exception("Ошибка в _update_frame, восстановление")
 
     def _update_tc_label(self):
         if self.tc_mode == 0: tc = self._active_player.get_local_timecode_str()
@@ -316,6 +325,53 @@ class PlayerWidget(QWidget):
         if hasattr(self.player, 'reset_seek_speed'):
             self.player.reset_seek_speed()
             self.play_pause_btn.setText("⏸ Pause" if self.player.playing else "▶ Play")
+
+    def _toggle_mute(self):
+        if not self.player or not self.player.audio_output: return
+        self._muted = not self._muted
+        self.player.audio_output.set_muted(self._muted)
+        if self.mute_btn: self.mute_btn.setText("🔇" if self._muted else "🔊")
+
+    def _update_render_interval(self):
+        fps = self.config.get('fps', 25.0)
+        self.render_timer.setInterval(int(1000.0 / fps))
+
+    def send_hwnd_to_manager(self):
+        self._send_hwnd_attempt(0)
+
+    def _send_hwnd_attempt(self, attempt):
+        if attempt > 5:
+            logger.error("Failed to send HWND after 5 attempts")
+            return
+        hwnd = int(self.winId())
+        if hwnd == 0:
+            QTimer.singleShot(200, lambda: self._send_hwnd_attempt(attempt + 1))
+            return
+        socket = QLocalSocket(self)
+        socket.connectToServer("ProxyPlayerManager")
+        if socket.waitForConnected(1000):
+            socket.write(str(hwnd).encode())
+            socket.flush()
+            socket.disconnectFromServer()
+            logger.debug(f"Sent HWND {hwnd}")
+        else:
+            logger.warning(f"Connection attempt {attempt} failed, retrying...")
+            QTimer.singleShot(500, lambda: self._send_hwnd_attempt(attempt + 1))
+
+    def start_playback(self):
+        """Запускает воспроизведение (вызывается из main.py)."""
+        if self._playback_started:
+            return
+        self._playback_started = True
+        try:
+            self.player.start_playback()
+            if not self.render_timer.isActive():
+                self.render_timer.start()
+            # Скрываем заглушку после того, как буфер наполнится (первый кадр появится в _update_frame)
+            self.video_widget.hide_placeholder()
+        except Exception as e:
+            logger.exception("Ошибка в start_playback")
+            raise
 
     def _seek_relative(self, delta_sec): self.player.seek_relative(delta_sec)
     def _toggle_play_pause(self): self._active_player.toggle_pause()
@@ -378,20 +434,21 @@ class PlayerWidget(QWidget):
 
 class ManagedProcess(QObject):
     process_started = pyqtSignal(int)
-    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, parent=None):
+    def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, 
+                 mirror_path: str = None, parent=None):
         super().__init__(parent)
         self.process = QProcess(self)
         exe = sys.executable
         script = [] if getattr(sys, 'frozen', False) else [os.path.join(os.path.dirname(__file__), 'main.py')]
         args = script + [str(mp4_path), '--managed']
         if use_moov: args.append('--moov')
-        logger.debug(f"Запуск плеера: {exe} {args}")
+        if mirror_path:
+            args.extend(['--mirror', mirror_path])
         self.process.start(exe, args)
         if self.process.waitForStarted(5000):
             pid = self.process.processId()
             if pid: self.process_started.emit(pid)
-        else:
-            logger.error("Cannot start player process")
+        else: logger.error("Cannot start player process")
 
     def close(self):
         if self.process:
@@ -439,18 +496,22 @@ class ManagerWindow(QMainWindow):
         else: logger.error(f"Не удалось запустить HTTP-сервер на порту {self.http_port}")
 
         if mp4_path.exists():
-            # IndexBuilder не запускаем, чтобы не блокировать зеркало .idx
-            self._add_player(mp4_path, use_moov)
+            try:
+                mirror = prepare_mirror(self._find_idx_for(mp4_path))
+                self._add_player(mp4_path, use_moov, mirror_path=str(mirror))
+            except Exception as e:
+                logger.error(f"Не удалось подготовить зеркало: {e}")
         QTimer.singleShot(2000, self._force_place_first_player)
         self.hide()
 
+    def _find_idx_for(self, mp4_path: Path) -> Path:
+        idx = mp4_path.parent / "idx" / "mp4" / f"{mp4_path.stem}.idx"
+        if not idx.exists(): idx = mp4_path.parent / f"{mp4_path.stem}.idx"
+        return idx
+
     def _start_index_builder(self, mp4_path: Path, use_moov: bool):
-        """Запускает IndexBuilder как отдельный процесс (используется только при необходимости)."""
         if use_moov: return
-        stem = mp4_path.stem
-        parent = mp4_path.parent
-        idx_path = parent / "idx" / "mp4" / f"{stem}.idx"
-        if not idx_path.exists(): idx_path = parent / f"{stem}.idx"
+        idx_path = self._find_idx_for(mp4_path)
         if not idx_path.exists():
             logger.warning("IDX не найден, IndexBuilder не запущен")
             return
@@ -478,11 +539,11 @@ class ManagerWindow(QMainWindow):
                 win32gui.EnumWindows(callback, hwnds)
                 if hwnds: self._place_new_player(hwnds[0])
 
-    def _add_player(self, mp4_path, use_moov):
+    def _add_player(self, mp4_path, use_moov, mirror_path=None):
         if len(self.processes) >= MAX_PLAYERS:
             QMessageBox.warning(self, "Ограничение", f"Нельзя открыть больше {MAX_PLAYERS} окон плееров.")
             return
-        proc = ManagedProcess(mp4_path, self.config, use_moov, self)
+        proc = ManagedProcess(mp4_path, self.config, use_moov, mirror_path=mirror_path, parent=self)
         proc.process.finished.connect(lambda: self._on_player_closed(proc))
         self.processes.append(proc)
 
@@ -554,20 +615,15 @@ class ManagerWindow(QMainWindow):
 
     def _open_player_from_path(self, mp4_path: Path):
         if not mp4_path.exists(): return
-        logger.debug(f"Поиск .idx для {mp4_path}")
-        idx1 = mp4_path.parent / "idx" / "mp4" / f"{mp4_path.stem}.idx"
-        idx2 = mp4_path.parent / f"{mp4_path.stem}.idx"
-        logger.debug(f"  проверяю {idx1} : {idx1.exists()}")
-        logger.debug(f"  проверяю {idx2} : {idx2.exists()}")
-        if idx1.exists():
-            idx = idx1
-        elif idx2.exists():
-            idx = idx2
-        else:
+        idx = self._find_idx_for(mp4_path)
+        if not idx.exists():
             QMessageBox.critical(self, "Ошибка", f"Отсутствует индексный файл (.idx) для:\n{mp4_path}")
             return
-        use_moov = False
-        self._add_player(mp4_path, use_moov)
+        try:
+            mirror = prepare_mirror(idx)
+            self._add_player(mp4_path, use_moov=False, mirror_path=str(mirror))
+        except Exception as e:
+            logger.error(f"Ошибка подготовки зеркала: {e}")
 
     def _open_new_player(self):
         start_dir = self.config.get('homedir', '')

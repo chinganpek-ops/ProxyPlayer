@@ -2,6 +2,7 @@
 playback_engine.py – движок воспроизведения для ProxyPlayer v1.
 Объединяет SeekEngine, ChunkPipeline, SyncManager и AudioOutput.
 Работает с локальными индексами чанков через IndexWindow.
+v1.1 – защита от повторного запуска, остановка пайплайна перед стартом.
 """
 
 import time
@@ -67,6 +68,7 @@ class PlaybackEngine:
         self._normal_playing_state = False
 
         self._video_ready_timer: Optional[threading.Timer] = None
+        self._playback_started = False  # флаг, предотвращающий повторный запуск
 
     # ------------------------------------------------------------------
     def start_playback(self, global_start_frame: int, window_start_frame: int):
@@ -75,6 +77,15 @@ class PlaybackEngine:
         global_start_frame – глобальный индекс кадра.
         window_start_frame – глобальный индекс первого кадра окна.
         """
+        if self._playback_started:
+            logger.warning("start_playback вызван повторно, игнорируем")
+            return
+        self._playback_started = True
+
+        # Останавливаем предыдущий пайплайн, если он работал
+        if self._pipeline:
+            self._pipeline.stop()
+
         local_chunk = (global_start_frame - window_start_frame) // 12
         with self._clock_lock:
             self._audio_clock = video_frame_to_pts(global_start_frame)

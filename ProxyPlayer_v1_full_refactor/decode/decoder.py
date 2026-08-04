@@ -4,6 +4,7 @@ decoder.py – программный и аппаратный (NVIDIA CUDA/CUVID
 и автоматический выбор между CPU и GPU. Кэширует проверку доступности GPU.
 Выдаёт кадры в формате RGB24. Основной метод декодирования – decode_sample (AVCC).
 Версия production: детальное логирование, явные ошибки вместо скрытых fallback-путей.
+Добавлены защитные проверки и обработка исключений для предотвращения падений.
 """
 
 import logging
@@ -41,6 +42,8 @@ class Decoder:
         self.gpu_mode = gpu_mode
         self._codec_name = "h264"
         self._hw_device_ctx = None
+        self.codec = None  # будет инициализирован позже
+        self._closed = False
 
         # --- Попытка использовать GPU ---
         if gpu_mode in ("on", "auto"):
@@ -126,6 +129,9 @@ class Decoder:
         Возвращает список кадров RGB24.
         При ошибке возвращает пустой список и логирует предупреждение.
         """
+        if self._closed or self.codec is None:
+            logger.debug("decode_sample: декодер закрыт или не инициализирован")
+            return []
         if not data:
             logger.debug("decode_sample: пустые данные")
             return []
@@ -133,7 +139,7 @@ class Decoder:
             packet = av.Packet(memoryview(data))
             return self._decode_packet_frames(packet)
         except Exception as e:
-            logger.error(f"Ошибка при создании пакета или декодировании: {e}")
+            logger.error(f"Ошибка при создании пакета или декодировании: {e}", exc_info=True)
             return []
 
     def decode_sample_with_pts(self, data: bytes, base_pts: int = 0) -> List[Tuple[np.ndarray, int]]:
@@ -147,6 +153,9 @@ class Decoder:
         Returns:
             Список кортежей (кадр RGB24, pts в аудиосэмплах 48 кГц)
         """
+        if self._closed or self.codec is None:
+            logger.debug("decode_sample_with_pts: декодер закрыт или не инициализирован")
+            return []
         if not data:
             logger.debug("decode_sample_with_pts: пустые данные")
             return []
@@ -156,38 +165,52 @@ class Decoder:
             frames = self.codec.decode(packet)
             result = []
             for i, frame in enumerate(frames):
-                img = np.ascontiguousarray(frame.to_ndarray(format="rgb24"))
-                # Пытаемся получить реальный PTS из кадра
-                if frame.pts is not None:
-                    # Пересчитываем PTS в сэмплы 48 кГц
-                    time_base = float(self.codec.time_base.numerator) / self.codec.time_base.denominator
-                    pts = int(frame.pts * time_base * 48000)
-                else:
-                    pts = base_pts + i * 1920  # fallback: последовательные PTS
-                result.append((img, pts))
+                try:
+                    img = np.ascontiguousarray(frame.to_ndarray(format="rgb24"))
+                    # Пытаемся получить реальный PTS из кадра
+                    if frame.pts is not None:
+                        # Пересчитываем PTS в сэмплы 48 кГц
+                        time_base = float(self.codec.time_base.numerator) / self.codec.time_base.denominator
+                        pts = int(frame.pts * time_base * 48000)
+                    else:
+                        pts = base_pts + i * 1920  # fallback: последовательные PTS
+                    result.append((img, pts))
+                except Exception as e:
+                    logger.debug(f"Ошибка преобразования кадра {i}: {e}")
+                    continue
             return result
         except Exception as e:
-            logger.error(f"Ошибка декодирования с PTS: {e}")
+            logger.error(f"Ошибка декодирования с PTS: {e}", exc_info=True)
             return []
 
     def _decode_packet_frames(self, packet: av.Packet) -> List[np.ndarray]:
+        if self.codec is None:
+            return []
         frames = []
         try:
             for frame in self.codec.decode(packet):
-                # Приведение к RGB24, как в оригинале
-                img = np.ascontiguousarray(frame.to_ndarray(format="rgb24"))
-                frames.append(img)
+                try:
+                    img = np.ascontiguousarray(frame.to_ndarray(format="rgb24"))
+                    frames.append(img)
+                except ValueError as e:
+                    logger.debug(f"Ошибка преобразования кадра: {e}")
+                except Exception as e:
+                    logger.debug(f"Неожиданная ошибка при преобразовании кадра: {e}")
         except ValueError as e:
             logger.debug(f"Ошибка декодирования кадра: {e}")
         except Exception as e:
-            logger.error(f"Неожиданная ошибка декодирования: {e}")
+            logger.error(f"Неожиданная ошибка декодирования: {e}", exc_info=True)
         return frames
 
     def filter_avcc(self, data: bytes) -> bytes:
         """
         Убирает NAL-юниты SEI и AUD из AVCC-потока.
         Возвращает очищенные данные.
+        При ошибке возвращает исходные данные (fallback) и логирует предупреждение.
         """
+        if self._closed:
+            logger.debug("filter_avcc: декодер закрыт")
+            return b''
         if not data:
             return b''
         # Для коротких блоков используем упрощённый, но надёжный метод
@@ -228,14 +251,21 @@ class Decoder:
         return bytes(result)
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         if self.codec:
             try:
                 # Извлекаем оставшиеся кадры из внутренних буферов FFmpeg
                 remaining = self.codec.decode(None)
                 if remaining:
                     logger.debug(f"Флешировано {len(remaining)} кадров при закрытии декодера")
-            except Exception:
-                pass
-            self.codec = None
+            except Exception as e:
+                logger.debug(f"Ошибка при флеше декодера: {e}")
+            finally:
+                try:
+                    self.codec = None
+                except Exception:
+                    pass
         self._hw_device_ctx = None
         logger.debug("Декодер закрыт")

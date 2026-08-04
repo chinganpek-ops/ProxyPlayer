@@ -166,6 +166,10 @@ class SeekEngine:
         if not raw_data:
             raise RuntimeError("Не удалось прочитать данные для seek")
 
+        # Проверяем наличие декодера
+        if self._decoder is None:
+            raise RuntimeError("Декодер не инициализирован")
+
         # Декодируем кадры
         buffer = FrameRingBuffer(max_frames=300)
         base_pts = video_frame_to_pts(window.window_start_frame + local_idr)
@@ -184,17 +188,33 @@ class SeekEngine:
             if rel_start < 0 or size <= 0:
                 continue
             sample = raw_data[rel_start:rel_start + size]
-            filtered = self._decoder.filter_avcc(sample)
+            try:
+                filtered = self._decoder.filter_avcc(sample)
+            except Exception as e:
+                logger.debug(f"Ошибка фильтрации AVCC для кадра {i}: {e}")
+                continue
             if not filtered:
                 continue
             try:
                 frames = self._decoder.decode_sample(filtered)
+                if not frames:
+                    continue
                 for frame in frames:
                     pts = video_frame_to_pts(window.window_start_frame + i)
                     if not buffer.try_push(frame, pts):
+                        # Буфер заполнен – прерываем цикл
+                        logger.debug(f"Буфер заполнен на кадре {i}, завершаем декодирование")
+                        # Выходим из цикла, но не из функции, чтобы вернуть то, что есть
+                        # используем break с флагом
                         break
+                else:
+                    # Если цикл не был прерван break, продолжаем со следующим i
+                    continue
+                # Если break сработал, выходим из внешнего цикла
+                break
             except Exception as e:
                 logger.debug(f"Ошибка декодирования кадра {i}: {e}")
+                continue
 
         if buffer.count == 0:
             raise RuntimeError("Не удалось декодировать ни одного кадра при seek")

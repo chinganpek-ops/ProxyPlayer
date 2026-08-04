@@ -265,8 +265,8 @@ def build_audio_chunks_from_structured(audio_arr: np.ndarray, num_video_chunks: 
     if len(audio_arr) == 0 or num_video_chunks == 0:
         return [{} for _ in range(num_video_chunks)]
 
-    # Предвычисляем номер чанка для каждой аудиозаписи
-    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+    # ИСПРАВЛЕНИЕ: приведение к int64 для безопасного вычитания
+    chunk_indices = (audio_arr['pts'] // SAMPLES_PER_CHUNK).astype(np.int64)
     chunks = [{} for _ in range(num_video_chunks)]
 
     for i in range(len(audio_arr)):
@@ -298,7 +298,8 @@ def build_audio_chunks_in_range(audio_arr: np.ndarray, start_chunk: int, num_chu
     if len(audio_arr) == 0 or num_chunks == 0:
         return [{} for _ in range(num_chunks)]
 
-    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+    # ИСПРАВЛЕНИЕ: приведение к int64, чтобы избежать переполнения uint64 при вычитании
+    chunk_indices = (audio_arr['pts'] // SAMPLES_PER_CHUNK).astype(np.int64)
     chunks = [{} for _ in range(num_chunks)]
 
     for i in range(len(audio_arr)):
@@ -330,7 +331,8 @@ def incremental_build_audio_chunks_v2(existing_chunks, audio_arr, num_video_chun
     else:
         start_update = max(0, len(existing_chunks) - AUDIO_CHUNK_TAIL_UPDATE)
 
-    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+    # ИСПРАВЛЕНИЕ: приведение к int64
+    chunk_indices = (audio_arr['pts'] // SAMPLES_PER_CHUNK).astype(np.int64)
     chunks = existing_chunks[:start_update]
 
     for chunk_idx in range(start_update, num_video_chunks):
@@ -355,7 +357,9 @@ def rebuild_audio_chunks_from(audio_arr, existing_chunks, start_chunk_idx, num_v
     """
     if start_chunk_idx >= num_video_chunks:
         return existing_chunks
-    chunk_indices = audio_arr['pts'] // SAMPLES_PER_CHUNK
+
+    # ИСПРАВЛЕНИЕ: приведение к int64
+    chunk_indices = (audio_arr['pts'] // SAMPLES_PER_CHUNK).astype(np.int64)
     chunks = existing_chunks[:start_chunk_idx]
     for chunk_idx in range(start_chunk_idx, num_video_chunks):
         mask = chunk_indices == chunk_idx

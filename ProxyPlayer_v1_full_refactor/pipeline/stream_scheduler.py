@@ -50,6 +50,7 @@ class StreamScheduler:
             self._mode = PlaybackMode.NORMAL
             self._current_chunk = current_local_chunk
             self._total_chunks = total_local_chunks
+            self._loaded_chunks.clear()
 
     def set_seek_mode(self, target_local_chunk: int, total_local_chunks: int):
         with self._lock:
