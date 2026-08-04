@@ -19,7 +19,7 @@ def setup_logging(
     """
     Настраивает корневой логгер.
     - Все сообщения пишутся в файл (уровень level).
-    - Опционально вывод в консоль (уровень INFO).
+    - Опционально вывод в консоль (уровень level).
     - Опциональный перехват stdout (печатает как DEBUG).
     - Параметр mode позволяет перезаписывать лог при каждом запуске.
     """
@@ -46,10 +46,10 @@ def setup_logging(
     except OSError as e:
         sys.stderr.write(f"Не удалось создать файл лога {log_file}: {e}\n")
 
-    # Консольный обработчик (если запрошен)
+    # Консольный обработчик (если запрошен) – теперь использует переданный уровень
     if console_output:
         ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
+        ch.setLevel(level)   # <-- ИСПРАВЛЕНИЕ: было logging.INFO, теперь level
         ch.setFormatter(formatter)
         root_logger.addHandler(ch)
 

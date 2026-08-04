@@ -1,6 +1,6 @@
 """
 stream_scheduler.py – приоритетный планировщик загрузки чанков (локальные индексы).
-Версия с максимальным логированием для диагностики.
+Добавлен контроль заполненности видеобуфера.
 """
 
 import threading
@@ -27,10 +27,10 @@ class StreamScheduler:
     def __init__(self, adaptive_strategy: AdaptiveChunkStrategy = None):
         self._adaptive = adaptive_strategy or AdaptiveChunkStrategy()
         self._mode = PlaybackMode.NORMAL
-        self._current_chunk = 0
-        self._total_chunks = 0
+        self._current_chunk = 0        # локальный индекс
+        self._total_chunks = 0         # количество чанков в окне
 
-        self._target_chunk = 0
+        self._target_chunk = 0         # локальный
         self._seek_priority_done = False
 
         self._direction = 0
@@ -38,13 +38,12 @@ class StreamScheduler:
 
         self._loaded_chunks: Set[int] = set()
         self._lock = threading.Lock()
-        self._video_buffer = None
+        self._video_buffer = None      # будет установлен через set_buffer
 
-        logger.info("StreamScheduler создан")
-
+    # ------------------------------------------------------------------
     def set_buffer(self, video_buffer):
+        """Устанавливает ссылку на видеобуфер для контроля заполнения."""
         self._video_buffer = video_buffer
-        logger.info("StreamScheduler: видеобуфер установлен")
 
     def set_normal_mode(self, current_local_chunk: int, total_local_chunks: int):
         with self._lock:
@@ -52,8 +51,6 @@ class StreamScheduler:
             self._current_chunk = current_local_chunk
             self._total_chunks = total_local_chunks
             self._loaded_chunks.clear()
-            logger.info("StreamScheduler: NORMAL mode, current=%d, total=%d",
-                        self._current_chunk, self._total_chunks)
 
     def set_seek_mode(self, target_local_chunk: int, total_local_chunks: int):
         with self._lock:
@@ -63,8 +60,6 @@ class StreamScheduler:
             self._total_chunks = total_local_chunks
             self._seek_priority_done = False
             self._loaded_chunks.clear()
-            logger.info("StreamScheduler: SEEK mode, target=%d, total=%d",
-                        self._target_chunk, self._total_chunks)
 
     def set_fast_forward_mode(self, direction: int, speed: float,
                               current_local_chunk: int, total_local_chunks: int):
@@ -74,35 +69,28 @@ class StreamScheduler:
             self._speed = speed
             self._current_chunk = current_local_chunk
             self._total_chunks = total_local_chunks
-            logger.info("StreamScheduler: FAST_FORWARD mode, dir=%d, speed=%.1f, current=%d, total=%d",
-                        self._direction, self._speed, self._current_chunk, self._total_chunks)
 
     def set_pause_mode(self, current_local_chunk: int, total_local_chunks: int):
         with self._lock:
             self._mode = PlaybackMode.PAUSE
             self._current_chunk = current_local_chunk
             self._total_chunks = total_local_chunks
-            logger.info("StreamScheduler: PAUSE mode, current=%d, total=%d",
-                        self._current_chunk, self._total_chunks)
 
     # ------------------------------------------------------------------
     def get_next_chunk(self) -> Optional[int]:
-        """Возвращает локальный индекс следующего чанка для загрузки."""
         with self._lock:
             if self._video_buffer is not None and self._video_buffer.free_slots == 0:
-                logger.debug("[Scheduler] free_slots==0, returning None")
+                print(f"  [Scheduler] free_slots==0, returning None")
                 return None
             chunk = self._get_next_chunk_locked()
-            logger.debug("[Scheduler] mode=%s, current=%d, total=%d, loaded=%d, returned=%s",
-                         self._mode, self._current_chunk, self._total_chunks,
-                         len(self._loaded_chunks), chunk)
+            print(f"  [Scheduler] mode={self._mode}, current={self._current_chunk}, "
+                f"total={self._total_chunks}, loaded={len(self._loaded_chunks)}, "
+                f"returned chunk={chunk}")
             return chunk
 
     def _get_next_chunk_locked(self) -> Optional[int]:
         if self._total_chunks == 0:
-            logger.debug("[Scheduler] total_chunks=0, no chunks available")
             return None
-
         if self._mode == PlaybackMode.NORMAL:
             return self._next_normal()
         elif self._mode == PlaybackMode.SEEK:
@@ -111,7 +99,6 @@ class StreamScheduler:
             return self._next_fast_forward()
         elif self._mode == PlaybackMode.PAUSE:
             return self._next_pause()
-        logger.warning("[Scheduler] unknown mode %s", self._mode)
         return None
 
     # ------------------------------------------------------------------
@@ -120,12 +107,9 @@ class StreamScheduler:
         while chunk in self._loaded_chunks and chunk < self._total_chunks:
             chunk += 1
         if chunk >= self._total_chunks:
-            logger.debug("[Scheduler] _next_normal: all chunks loaded (current=%d, total=%d)",
-                         self._current_chunk, self._total_chunks)
             return None
         self._loaded_chunks.add(chunk)
         self._current_chunk = chunk + 1
-        logger.debug("[Scheduler] _next_normal: selected chunk %d, new current=%d", chunk, self._current_chunk)
         return chunk
 
     def _next_seek(self) -> Optional[int]:
@@ -134,19 +118,15 @@ class StreamScheduler:
             chunk = self._target_chunk
             if chunk not in self._loaded_chunks and chunk < self._total_chunks:
                 self._loaded_chunks.add(chunk)
-                logger.debug("[Scheduler] _next_seek: priority chunk %d", chunk)
                 return chunk
         for offset in [1, 2]:
             for direction in [-1, 1]:
                 chunk = self._target_chunk + offset * direction
                 if 0 <= chunk < self._total_chunks and chunk not in self._loaded_chunks:
                     self._loaded_chunks.add(chunk)
-                    logger.debug("[Scheduler] _next_seek: neighbour chunk %d", chunk)
                     return chunk
-        # переход в нормальный режим
         self._mode = PlaybackMode.NORMAL
         self._current_chunk = max(self._target_chunk + 1, 0)
-        logger.info("[Scheduler] _next_seek: switching to NORMAL, current=%d", self._current_chunk)
         return self._next_normal()
 
     def _next_fast_forward(self) -> Optional[int]:
@@ -161,10 +141,8 @@ class StreamScheduler:
             if 0 <= chunk < self._total_chunks:
                 self._loaded_chunks.add(chunk)
                 self._current_chunk = chunk + self._direction * stride
-                logger.debug("[Scheduler] _next_fast_forward: chunk %d (stride=%d)", chunk, stride)
                 return chunk
             break
-        logger.debug("[Scheduler] _next_fast_forward: no suitable chunk found")
         return None
 
     def _next_pause(self) -> Optional[int]:
@@ -174,7 +152,6 @@ class StreamScheduler:
     def mark_chunk_failed(self, chunk_idx: int):
         with self._lock:
             self._loaded_chunks.discard(chunk_idx)
-            logger.debug("[Scheduler] marked chunk %d as failed", chunk_idx)
 
     def reset(self):
         with self._lock:
@@ -182,7 +159,6 @@ class StreamScheduler:
             self._mode = PlaybackMode.NORMAL
             self._current_chunk = 0
             self._total_chunks = 0
-            logger.info("[Scheduler] reset")
 
     @property
     def loaded_count(self) -> int:

@@ -222,7 +222,7 @@ def main():
         safe_stem = "".join(c if c.isalnum() or c in "._- " else "_" for c in mp4_path.stem) if mp4_path.stem else "empty"
         log_name = log_dir / f"{safe_stem}_{os.getpid()}.log"
 
-    setup_logging(level=logging.INFO, log_file=str(log_name), mode='w')
+    setup_logging(level=logging.DEBUG,log_file=str(log_name), mode='w')
     sys.excepthook = global_exception_hook
     logger = logging.getLogger(__name__)
     logger.info("Запуск ProxyPlayer v1")

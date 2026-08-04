@@ -4,6 +4,7 @@ v1.3 – увеличенные очереди для предотвращени
        расширенное логирование для диагностики зависаний.
 """
 
+import time
 import queue
 import threading
 import logging
