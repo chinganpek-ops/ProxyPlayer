@@ -1,0 +1,22 @@
+# Виртуальное окружение
+venv/
+env/
+.venv/
+ENV/
+
+# Системные файлы
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Файлы окружения (секреты)
+.env
+*.local
+
+# Редакторы и IDE
+.vscode/
+.idea/
+*.swp
+*.swo
