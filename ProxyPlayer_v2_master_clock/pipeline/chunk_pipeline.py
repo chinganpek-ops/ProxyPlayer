@@ -1,6 +1,13 @@
 """
 chunk_pipeline.py – трёхэтапный конвейер загрузки и декодирования чанков.
-v1.4 – увеличенные очереди, защита от гонок, отладочные логи для аудио.
+v2 – интеграция с MasterClock: AudioDecoderStage пушит аудио напрямую в MasterClock.
+MultiTrackAudioBuffer больше не используется.
+
+Исправления:
+- Условие фильтрации аудиодорожек заменено на track_id not in (2,3)
+- VideoDecoderStage._push_frame использует threading.Condition вместо активного ожидания
+- При остановке конвейера очищаются все внутренние очереди, чтобы старые пакеты
+  не блокировали возобновление после перемотки.
 """
 
 import time
@@ -13,7 +20,6 @@ from typing import Optional, List, Tuple
 import numpy as np
 
 from buffer.frame_buffer import FrameRingBuffer
-from buffer.audio_buffer import MultiTrackAudioBuffer
 from decode.decoder import Decoder
 from decode.audio_decoder import AudioDecoder
 from file_io.win_sequential_reader import WinSequentialReader
@@ -131,8 +137,6 @@ class DemuxerStage(Stage):
                     self._safe_put(self._video_queue, (local_chunk, v_packets), "video")
                 if a_packets:
                     self._safe_put(self._audio_queue, (local_chunk, a_packets), "audio")
-                else:
-                    logger.debug(f"[DEMUX AUDIO] чанк {local_chunk}: нет аудиопакетов")
             except Exception as e:
                 logger.error(f"Ошибка демукса чанка {local_chunk}: {e}", exc_info=True)
 
@@ -196,12 +200,11 @@ class DemuxerStage(Stage):
         # ---------- аудио ----------
         if local_chunk < len(window.audio_chunks):
             audio_chunk = window.audio_chunks[local_chunk]
-            logger.warning(f"[DEMUX] chunk={local_chunk}, has_audio={bool(audio_chunk)}, tracks={list(audio_chunk.keys()) if audio_chunk else 'none'}")
             if audio_chunk:
                 for track_id, entries in audio_chunk.items():
-                    if track_id == 0 or track_id > 3:
+                    # Исправлено: разрешены только дорожки 2 и 3
+                    if track_id not in (2, 3):
                         continue
-                    logger.warning(f"[DEMUX] track={track_id}, entries={len(entries)}")
                     for entry in entries:
                         size2 = entry.get('size2', 0)
                         rel = entry['abs_offset'] - chunk_start_offset
@@ -217,11 +220,6 @@ class DemuxerStage(Stage):
                                 d2 = raw_data[rel2:rel2 + size2]
 
                         audio_packets.append((track_id, d1, d2, entry['pts'], False))
-                        logger.warning(f"[DEMUX] added audio packet: track={track_id}, pts={entry['pts']}, size1={len(d1)}, size2={len(d2)}")
-            else:
-                logger.warning(f"[DEMUX] chunk={local_chunk}, audio_chunk is empty")
-        else:
-            logger.warning(f"[DEMUX] chunk={local_chunk} out of range (audio_chunks len={len(window.audio_chunks)})")
 
         return video_packets, audio_packets
 
@@ -233,6 +231,7 @@ class VideoDecoderStage(Stage):
         self._decoder = decoder
         self._buffer = video_buffer
         self._input_queue = input_queue
+        self._buffer_cond = threading.Condition()
         logger.info("VideoDecoderStage инициализирован")
 
     def run(self):
@@ -256,22 +255,25 @@ class VideoDecoderStage(Stage):
                     logger.debug(f"Ошибка декодирования видео: {e}")
 
     def _push_frame(self, frame: np.ndarray, pts: int):
-        deadline = time.monotonic() + 5.0
-        while not self.stop_event.is_set():
-            if self._buffer.try_push(frame, pts):
-                return
-            if time.monotonic() > deadline:
-                logger.warning("Видеобуфер переполнен, кадр отброшен (pts=%d)", pts)
-                return
-            self.stop_event.wait(0.01)
+        with self._buffer_cond:
+            while not self.stop_event.is_set():
+                if self._buffer.try_push(frame, pts):
+                    return
+                self._buffer_cond.wait(timeout=0.1)
+        logger.debug("Видеобуфер переполнен, кадр отброшен (pts=%d)", pts)
+
+    def notify_buffer_available(self):
+        """Вызывается, когда в буфере освобождается место."""
+        with self._buffer_cond:
+            self._buffer_cond.notify()
 
 
 class AudioDecoderStage(Stage):
-    def __init__(self, decoders: List[AudioDecoder], audio_buffers: MultiTrackAudioBuffer,
+    def __init__(self, decoders: List[AudioDecoder], master_clock,
                  input_queue: queue.Queue):
         super().__init__("AudioDecoderStage")
         self._decoders = decoders
-        self._audio_buffers = audio_buffers
+        self._master_clock = master_clock
         self._input_queue = input_queue
         self._fade_len = 8
         logger.info("AudioDecoderStage инициализирован")
@@ -286,7 +288,7 @@ class AudioDecoderStage(Stage):
                 continue
 
             for track_id, d1, d2, pts, need_fade in packets:
-                if track_id < 2 or track_id > 3:
+                if track_id not in (2, 3):
                     continue
                 decoder_idx = track_id - 2
                 if decoder_idx >= len(self._decoders) or self._decoders[decoder_idx] is None:
@@ -304,29 +306,20 @@ class AudioDecoderStage(Stage):
                 if need_fade and len(pcm_block) >= self._fade_len:
                     pcm_block[:self._fade_len] *= np.linspace(0, 1, self._fade_len)
 
-                self._push_audio(track_id, pcm_block, pts)
-
-    def _push_audio(self, track_id: int, pcm_block: np.ndarray, pts: int):
-        deadline = time.monotonic() + 5.0
-        while not self.stop_event.is_set():
-            if self._audio_buffers.try_write(track_id, pcm_block, pts):
-                logger.debug(f"Аудио записано: трек {track_id}, pts={pts}, сэмплов={len(pcm_block)}")
-                return
-            if time.monotonic() > deadline:
-                logger.warning("Аудиобуфер переполнен для дорожки %d, кадр отброшен (pts=%d)", track_id, pts)
-                return
-            self.stop_event.wait(0.01)
+                # Отправляем напрямую в MasterClock
+                if self._master_clock:
+                    self._master_clock.push_audio(track_id, pcm_block)
 
 
 class ChunkPipeline:
     def __init__(self, mp4_path: Path, window: IndexWindow,
                  video_decoder: Decoder, audio_decoders: List[AudioDecoder],
-                 video_buffer: FrameRingBuffer, audio_buffers: MultiTrackAudioBuffer):
+                 video_buffer: FrameRingBuffer, master_clock=None):
         self._mp4_path = mp4_path
         self._video_decoder = video_decoder
         self._audio_decoders = audio_decoders
         self._video_buffer = video_buffer
-        self._audio_buffers = audio_buffers
+        self._master_clock = master_clock
 
         self._window_lock = threading.Lock()
         self._window = window
@@ -339,6 +332,13 @@ class ChunkPipeline:
         self._audio_queue = queue.Queue(maxsize=AUDIO_QUEUE_SIZE)
 
         self._stages: List[Stage] = []
+
+    def set_master_clock(self, master_clock):
+        """Подключает MasterClock после создания."""
+        self._master_clock = master_clock
+        for stage in self._stages:
+            if isinstance(stage, AudioDecoderStage):
+                stage._master_clock = master_clock
 
     def get_window_snapshot(self) -> IndexWindow:
         with self._window_lock:
@@ -358,19 +358,30 @@ class ChunkPipeline:
                                self._video_queue, self._audio_queue)
         video_dec = VideoDecoderStage(self._video_decoder, self._video_buffer,
                                       self._video_queue)
-        # audio_dec = AudioDecoderStage(self._audio_decoders, self._audio_buffers,
-         #                             self._audio_queue)
+        audio_dec = AudioDecoderStage(self._audio_decoders, self._master_clock,
+                                      self._audio_queue)
 
-        self._stages = [reader, demuxer, video_dec]#, audio_dec]
+        self._stages = [reader, demuxer, video_dec, audio_dec]
         for stage in self._stages:
             stage.start()
-        logger.info("ChunkPipeline: все стадии запущены(без аудио)")
+        logger.info("ChunkPipeline: все стадии запущены")
 
     def stop(self):
         logger.info("ChunkPipeline: остановка стадий")
         for stage in self._stages:
             stage.stop()
         for stage in self._stages:
+            if isinstance(stage, VideoDecoderStage):
+                stage.notify_buffer_available()
+        for stage in self._stages:
             stage.join(timeout=2.0)
         self._stages.clear()
-        logger.info("ChunkPipeline: все стадии остановлены")
+
+        # Очистка всех внутренних очередей
+        for q in (self._raw_queue, self._video_queue, self._audio_queue):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+        logger.info("ChunkPipeline: все стадии остановлены, очереди очищены")

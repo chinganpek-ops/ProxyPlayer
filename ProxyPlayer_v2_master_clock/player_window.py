@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-player_window.py – главное окно плеера и менеджер окон (ProxyPlayer v1).
-Использует StreamController. Сохраняет весь функционал v6.
-Добавлена поддержка IndexService: менеджер вызывает prepare_mirror и передаёт
-путь к зеркалу плееру через аргумент --mirror.
+player_window.py – главное окно плеера и менеджер окон (ProxyPlayer v2).
+Адаптирован под MasterClock: mute и переключение дорожек работают через master_clock.
+Исправления v3:
+- Единая точка seek (_start_seek) с поколением запросов.
+- Кнопка Play блокируется до завершения актуального seek.
+- Кнопка Live, слайдер, таймкод – всё идёт через _start_seek.
+- Устранена лавина потоков при многократных нажатиях.
 """
 
 import sys
@@ -28,7 +31,8 @@ from core.stream_controller import StreamController
 from config.config import save_config
 from output.video_widget import GLVideoWidget
 from ui.controls import build_controls
-from index.idx_cache import prepare_mirror  # <-- только менеджер вызывает
+from index.idx_cache import prepare_mirror
+from config.timebase import pts_to_video_frame
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +87,11 @@ class PlayerWidget(QWidget):
         self.mp4_path = mp4_path
         self.use_moov = use_moov
         self.config = config
-        self.mirror_path = mirror_path  # путь к готовому зеркалу (если передан)
-        self._playback_started = False  # флаг, предотвращающий повторный запуск
+        self.mirror_path = mirror_path
+        self._playback_started = False
+        self._seek_pending = False          # true, если слайдер был отпущен и ждём Play
+        self._seeking = False               # true, пока асинхронный seek не завершён
+        self._seek_generation = 0           # увеличивается при каждом новом seek
 
         self.setStyleSheet("""
             background-color: #2b2b2b;
@@ -98,7 +105,6 @@ class PlayerWidget(QWidget):
             QSlider::handle:horizontal { background: #888888; width: 12px; margin: -4px 0; }
         """)
 
-        self._seeking = False
         self._muted = False
         self._updating_tracks = False
         self.tc_mode = 0
@@ -135,7 +141,6 @@ class PlayerWidget(QWidget):
             self.player.close()
             raise RuntimeError("StreamController initialization timeout")
         
-        # Плеер готов, но воспроизведение ещё не запущено – ждём вызова start_playback()
         self.setFocusPolicy(Qt.StrongFocus)
 
     @staticmethod
@@ -172,7 +177,7 @@ class PlayerWidget(QWidget):
             gpu_mode=self.config.get('use_gpu_decoder', 'off'),
             audio_delay_ms=self.config.get('audio_delay_ms', 0),
             start_from_live=True,
-            mirror_path=self.mirror_path,   # передаём готовое зеркало
+            mirror_path=self.mirror_path,
         )
 
     def _init_ui(self):
@@ -249,6 +254,123 @@ class PlayerWidget(QWidget):
     def _exit_timecode_edit_mode(self):
         self.tc_input.hide(); self.tc_label.show(); self.setFocus()
 
+    # ------------------------------------------------------------------
+    # Единая точка seek
+    # ------------------------------------------------------------------
+    def _start_seek(self, frame_idx: int):
+        """Запускает асинхронный seek с защитой от гонок."""
+        self._seek_generation += 1
+        gen = self._seek_generation
+        self._seeking = True
+        self._seek_pending = True   # после перемотки всегда пауза, ждём Play
+
+        def on_seek_done():
+            if gen != self._seek_generation:
+                return             # устаревший запрос – ничего не делаем
+            self._seeking = False
+            self._seek_pending = False
+            self._update_frame()
+            self.video_widget.hide_placeholder()
+            self.video_widget.update()
+
+        # Отменяем предыдущий seek-поток (если есть)
+        if hasattr(self.player, '_seek_engine'):
+            self.player._seek_engine.cancel_current()
+
+        self.player.seek_absolute(frame_idx, callback=on_seek_done)
+
+    # ------------------------------------------------------------------
+    # Обработчики кнопок
+    # ------------------------------------------------------------------
+    def _on_slider_pressed(self):
+        self._seeking = True
+        self._seek_pending = True
+        if self._active_player and self._active_player.playing:
+            self._active_player.pause()
+        self.play_pause_btn.setText("▶ Play")
+
+    def _on_slider_moved(self, value):
+        self._show_tc_for_frame(value)
+
+    def _on_slider_released(self):
+        self._start_seek(self.slider.value())
+
+    def _go_live(self):
+        if isinstance(self._active_player, StreamController):
+            live_frame = max(0, self._active_player.total_frames - 1600)
+            self._start_seek(live_frame)
+        self.setFocus()
+
+    def _on_timecode_entered(self):
+        if not self.player: return
+        tc_text = self.tc_input.text().strip()
+        if not tc_text or tc_text == "00:00:00;00":
+            self._exit_timecode_edit_mode(); return
+        try:
+            from config.timebase import timecode_to_frame
+            target_frame = timecode_to_frame(tc_text, self.player.fps)
+            if self.tc_mode == 1:
+                target_frame -= self.player.start_frame_offset
+            target_frame = max(0, min(target_frame, self.player.total_frames - 1))
+            if target_frame < 0 or target_frame >= self.player.total_frames:
+                logger.warning(f"Таймкод {tc_text} вне диапазона")
+                self._exit_timecode_edit_mode(); return
+            self._start_seek(target_frame)
+        except ValueError as e:
+            logger.warning(f"Ошибка парсинга таймкода '{tc_text}': {e}")
+        finally:
+            self._exit_timecode_edit_mode()
+
+    def _seek_relative(self, delta_sec: float):
+        frame = pts_to_video_frame(self.player.audio_clock)
+        target = frame + int(round(delta_sec * self.player.fps))
+        target = max(0, min(target, self.player.total_frames - 1))
+        self._start_seek(target)
+
+    def _toggle_play_pause(self):
+        if self._seeking:
+            return   # идёт перемотка, play/pause недоступен
+        if self._seek_pending:
+            self._seek_pending = False
+        self._active_player.toggle_pause()
+
+    def _jkl_seek(self, direction):
+        if hasattr(self.player, 'set_seek_speed'):
+            self.player.set_seek_speed(direction)
+            self.play_pause_btn.setText(self.player.get_seek_speed_display())
+
+    def _jkl_stop(self):
+        if hasattr(self.player, 'reset_seek_speed'):
+            self.player.reset_seek_speed()
+            self.play_pause_btn.setText("⏸ Pause" if self.player.playing else "▶ Play")
+
+    # ------------------------------------------------------------------
+    # Остальные методы (аудио, таймер, утилиты)
+    # ------------------------------------------------------------------
+    def _toggle_mute(self):
+        if not self.player or not self.player.master_clock:
+            return
+        self._muted = not self._muted
+        self.player.master_clock.set_muted(self._muted)
+        if self.mute_btn:
+            self.mute_btn.setText("🔇" if self._muted else "🔊")
+        logger.debug("Mute переключён: %s", self._muted)
+
+    def _on_track_toggled(self, track_id: int, checked: bool):
+        if self._updating_tracks:
+            return
+        if track_id in self.active_tracks:
+            if not checked:
+                self.active_tracks.remove(track_id)
+        else:
+            if checked:
+                self.active_tracks.append(track_id)
+        self.player.set_active_tracks(self.active_tracks)
+
+    def _update_render_interval(self):
+        fps = self.config.get('fps', 25.0)
+        self.render_timer.setInterval(int(1000.0 / fps))
+
     def _update_frame(self):
         try:
             if self._seeking:
@@ -266,7 +388,10 @@ class PlayerWidget(QWidget):
                     max_slider = total - 1
                     if not self.player._finalized: max_slider = max(0, total - 1600)
                     if self.slider.maximum() != max_slider: self.slider.setRange(0, max_slider)
-                self.slider.blockSignals(True); self.slider.setValue(frame_idx); self.slider.blockSignals(False)
+                if self._active_player.playing:
+                    self.slider.blockSignals(True)
+                    self.slider.setValue(frame_idx)
+                    self.slider.blockSignals(False)
             self._update_tc_label()
             if hasattr(self._active_player, 'get_seek_speed_display'):
                 d = self._active_player.get_seek_speed_display()
@@ -282,12 +407,6 @@ class PlayerWidget(QWidget):
         self.tc_label.setText(tc)
         if not self.tc_input.hasFocus(): self.tc_input.setText(tc)
 
-    def _on_slider_pressed(self): self._seeking = True
-    def _on_slider_moved(self, value): self._show_tc_for_frame(value)
-    def _on_slider_released(self): self.player.seek_absolute(self.slider.value())
-    def _on_seek_finished(self, frame_idx):
-        self._seeking = False; self._update_frame(); self.video_widget.hide_placeholder(); self.video_widget.update()
-
     def _show_tc_for_frame(self, frame_idx):
         total_seconds = frame_idx / self.player.fps
         h, m = divmod(int(total_seconds), 3600); m, s = divmod(m, 60)
@@ -300,41 +419,34 @@ class PlayerWidget(QWidget):
             f_abs = int(round((total_seconds_abs - int(total_seconds_abs)) * self.player.fps))
             self.tc_label.setText(f"{h_abs:02d}:{m_abs:02d}:{s_abs:02d};{f_abs:02d}")
 
-    def _on_timecode_entered(self):
-        if not self.player: return
-        tc_text = self.tc_input.text().strip()
-        if not tc_text or tc_text == "00:00:00;00": self._exit_timecode_edit_mode(); return
-        try:
-            from config.timebase import timecode_to_frame
-            target_frame = timecode_to_frame(tc_text, self.player.fps)
-            if self.tc_mode == 1: target_frame = target_frame - self.player.start_frame_offset
-            target_frame = max(0, min(target_frame, self.player.total_frames - 1))
-            if target_frame < 0 or target_frame >= self.player.total_frames:
-                logger.warning(f"Таймкод {tc_text} вне диапазона")
-                self._exit_timecode_edit_mode(); return
-            self.player.seek_absolute(target_frame)
-        except ValueError as e: logger.warning(f"Ошибка парсинга таймкода '{tc_text}': {e}")
-        finally: self._exit_timecode_edit_mode()
+    def _on_volume_changed(self, value):
+        logger.debug("Регулировка громкости не реализована в MasterClock (значение=%d)", value)
 
-    def _jkl_seek(self, direction):
-        if hasattr(self.player, 'set_seek_speed'):
-            self.player.set_seek_speed(direction)
-            self.play_pause_btn.setText(self.player.get_seek_speed_display())
+    def _toggle_tc_mode(self):
+        self.tc_mode = 1 - self.tc_mode; self.tc_btn.setText("TC: Лок" if self.tc_mode == 0 else "TC: Реал")
 
-    def _jkl_stop(self):
-        if hasattr(self.player, 'reset_seek_speed'):
-            self.player.reset_seek_speed()
-            self.play_pause_btn.setText("⏸ Pause" if self.player.playing else "▶ Play")
+    def _toggle_aspect(self):
+        modes = ['fit', '4:3', '16:9']; cur = self.video_widget.aspect_mode
+        nxt = modes[(modes.index(cur) + 1) % len(modes)]
+        self.video_widget.aspect_mode = nxt; self.aspect_btn.setText(f"📐 {nxt}   "); self.video_widget.update(); self.setFocus()
 
-    def _toggle_mute(self):
-        if not self.player or not self.player.audio_output: return
-        self._muted = not self._muted
-        self.player.audio_output.set_muted(self._muted)
-        if self.mute_btn: self.mute_btn.setText("🔇" if self._muted else "🔊")
+    def _show_settings(self):
+        from config.settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self.config, self)
+        if dlg.exec_() == QDialog.Accepted:
+            self.config = dlg.get_settings(); save_config(self.config); self._reload_file()
 
-    def _update_render_interval(self):
-        fps = self.config.get('fps', 25.0)
-        self.render_timer.setInterval(int(1000.0 / fps))
+    def _reload_file(self):
+        self.render_timer.stop()
+        if hasattr(self, 'render_timer') and self.render_timer is not None:
+            self.render_timer.deleteLater(); self.render_timer = None
+        self.player.close()
+        self.player = self._create_controller()
+        self.player._ready.wait()
+        self._active_player = self.player
+        self.render_timer = QTimer(self)
+        self.render_timer.timeout.connect(self._update_frame)
+        self._update_render_interval(); self.render_timer.start()
 
     def send_hwnd_to_manager(self):
         self._send_hwnd_attempt(0)
@@ -359,53 +471,18 @@ class PlayerWidget(QWidget):
             QTimer.singleShot(500, lambda: self._send_hwnd_attempt(attempt + 1))
 
     def start_playback(self):
-        """Запускает воспроизведение (вызывается из main.py)."""
         if self._playback_started:
             return
         self._playback_started = True
+        self._seek_pending = False
         try:
             self.player.start_playback()
             if not self.render_timer.isActive():
                 self.render_timer.start()
-            # Скрываем заглушку после того, как буфер наполнится (первый кадр появится в _update_frame)
             self.video_widget.hide_placeholder()
         except Exception as e:
             logger.exception("Ошибка в start_playback")
             raise
-
-    def _seek_relative(self, delta_sec): self.player.seek_relative(delta_sec)
-    def _toggle_play_pause(self): self._active_player.toggle_pause()
-    def _go_live(self):
-        if isinstance(self._active_player, StreamController):
-            self._active_player.seek_absolute(max(0, self._active_player.total_frames - 1600))
-        self.setFocus()
-    def _on_recording_finished(self):
-        self.video_widget.show_transmission_ended(); self.play_pause_btn.setText("▶ Play")
-    def _toggle_tc_mode(self): self.tc_mode = 1 - self.tc_mode; self.tc_btn.setText("TC: Лок" if self.tc_mode == 0 else "TC: Реал")
-    def _on_volume_changed(self, value):
-        if self.player.audio_output: self.player.audio_output.set_volume(value / 100.0)
-    def _show_settings(self):
-        from config.settings_dialog import SettingsDialog
-        dlg = SettingsDialog(self.config, self)
-        if dlg.exec_() == QDialog.Accepted:
-            self.config = dlg.get_settings(); save_config(self.config); self._reload_file()
-
-    def _reload_file(self):
-        self.render_timer.stop()
-        if hasattr(self, 'render_timer') and self.render_timer is not None:
-            self.render_timer.deleteLater(); self.render_timer = None
-        self.player.close()
-        self.player = self._create_controller()
-        self.player._ready.wait()
-        self._active_player = self.player
-        self.render_timer = QTimer(self)
-        self.render_timer.timeout.connect(self._update_frame)
-        self._update_render_interval(); self.render_timer.start()
-
-    def _toggle_aspect(self):
-        modes = ['fit', '4:3', '16:9']; cur = self.video_widget.aspect_mode
-        nxt = modes[(modes.index(cur) + 1) % len(modes)]
-        self.video_widget.aspect_mode = nxt; self.aspect_btn.setText(f"📐 {nxt}   "); self.video_widget.update(); self.setFocus()
 
     def keyPressEvent(self, event):
         if self.tc_input.hasFocus():
@@ -429,6 +506,7 @@ class PlayerWidget(QWidget):
         if hasattr(self, 'video_widget') and self.video_widget is not None:
             if hasattr(self.video_widget, 'cleanup'): self.video_widget.cleanup()
         if self.player: self.player.close()
+        QApplication.processEvents()
         super().closeEvent(event)
 
 
@@ -464,7 +542,7 @@ class ManagerWindow(QMainWindow):
         self.use_moov = use_moov
         self.processes = []; self.hwnd_positions = {}; self._closing = False
         self._index_builder_process = None; self._last_worker = None
-        self.setWindowTitle("ProxyPlayer v1 – Panel")
+        self.setWindowTitle("ProxyPlayer v2 – Panel")
         self.setStyleSheet("background-color: #2b2b2b;")
         icon_path = os.path.join(os.path.dirname(__file__), 'icon.ico')
         app_icon = QIcon(icon_path) if os.path.exists(icon_path) else self.style().standardIcon(QStyle.SP_ComputerIcon)
@@ -476,7 +554,7 @@ class ManagerWindow(QMainWindow):
         ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
-        self.tray_icon = QSystemTrayIcon(self); self.tray_icon.setIcon(app_icon); self.tray_icon.setToolTip("ProxyPlayer")
+        self.tray_icon = QSystemTrayIcon(self); self.tray_icon.setIcon(app_icon); self.tray_icon.setToolTip("ProxyPlayer v2")
         tray_menu = QMenu()
         add_action = QAction("Добавить плеер", self); add_action.triggered.connect(self._open_new_player); tray_menu.addAction(add_action)
         exit_action = QAction("Выход", self); exit_action.triggered.connect(self._stop_all); tray_menu.addAction(exit_action)
@@ -495,7 +573,7 @@ class ManagerWindow(QMainWindow):
             logger.info(f"HTTP-сервер Video Helper запущен на порту {self.http_port}")
         else: logger.error(f"Не удалось запустить HTTP-сервер на порту {self.http_port}")
 
-        if mp4_path.exists():
+        if mp4_path and mp4_path.exists() and mp4_path.suffix.lower() == '.mp4':
             try:
                 mirror = prepare_mirror(self._find_idx_for(mp4_path))
                 self._add_player(mp4_path, use_moov, mirror_path=str(mirror))

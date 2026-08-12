@@ -1,0 +1,107 @@
+ProxyPlayer v2 — архитектура и описание
+Обзор проекта
+
+ProxyPlayer v2 — высокопроизводительный сетевой видеоплеер для воспроизведения растущих (live) и архивных MP4‑файлов формата Dalet по протоколу SMB/CIFS.
+Версия 2 привносит единый источник тактового сигнала и аудиовыхода на основе звуковой карты (MasterClock), что устраняет дрейф синхронизации, упрощает архитектуру и делает видео плавным.
+
+Плеер построен на модульной архитектуре с конвейерной обработкой чанков, оконным индексом и асинхронным seek. Поддерживает JKL‑перемотку, раздельное управление аудиодорожками, паузу, перемотку по таймкоду и слайдеру.
+Что нового в v2 (относительно v1)
+Компонент	v1	v2
+Источник тактов	audio_clock рассчитывался по системному времени, с коррекцией дрейфа	MasterClock — единый генератор на основе sounddevice.OutputStream. Счётчик семплов обновляется атомарно в аудиоколлбэке. Дрейф отсутствует.
+Аудиовыход	AudioOutput (PyQt5.QtMultimedia), требовал инициализации в главном потоке, часто не запускался из‑за конфликтов потоков	Заменён на MasterClock. Не зависит от Qt, работает в отдельном потоке звуковой карты.
+Аудиобуферы	MultiTrackAudioBuffer + AudioRingBuffer (кольцевые буферы, ручное управление read_pos/write_pos)	Удалены. Аудиоданные напрямую отправляются в очередь MasterClock через push_audio(track_id, samples).
+Синхронизация	SyncManager содержал логику коррекции дрейфа	SyncManager упрощён: получает audio_clock напрямую от MasterClock, без дрейф‑коррекции.
+PlaybackEngine	Зависел от AudioOutput, имел таймер _update_clock_from_system	Интегрирован с MasterClock: audio_clock читается из master_clock.get_audio_clock(), resume()/pause() управляют потоком звуковой карты.
+StreamController	Создавал AudioOutput в start_playback, но были проблемы с потоками	Создаёт MasterClock в главном потоке, передаёт в PlaybackEngine и ChunkPipeline.
+ChunkPipeline	AudioDecoderStage записывал в MultiTrackAudioBuffer	AudioDecoderStage теперь пушит семплы в master_clock.push_audio().
+PlayerWidget	Использовал self.player.audio_output для mute/дорожек	Работает с self.player.master_clock.set_muted() / set_track_enabled(). Добавлена защита от самопроизвольного воспроизведения после перемотки.
+Структура проекта (основные модули)
+text
+
+ProxyPlayer_v2_master_clock/
+├── main.py                     # точка входа
+├── player_window.py            # GUI (PlayerWidget, ManagerWindow)
+├── core/
+│   ├── master_clock.py         # единый генератор тактов + аудиовыход
+│   ├── playback_engine.py      # движок воспроизведения
+│   ├── stream_controller.py    # фасад, связывающий все компоненты
+│   └── sync_manager.py         # синхронизация видео с аудио
+├── pipeline/
+│   ├── chunk_pipeline.py       # трёхэтапный конвейер (Reader→Demuxer→VideoDecoder/AudioDecoder)
+│   ├── stream_scheduler.py     # планировщик загрузки чанков
+│   └── adaptive_chunk.py       # адаптивный размер чанка
+├── index/
+│   ├── lazy_index.py           # оконный доступ к индексу
+│   ├── moov_builder.py         # построитель структур из .idx
+│   └── idx_cache.py            # кэширование .idx + mmap
+├── seek/
+│   └── seek_engine.py          # асинхронный seek с отменой
+├── decode/
+│   ├── decoder.py              # видеодекодер H.264
+│   └── audio_decoder.py        # декодер AAC
+├── buffer/
+│   └── frame_buffer.py         # кольцевой буфер видеокадров
+├── output/
+│   └── video_widget.py         # QOpenGLWidget для рендеринга видео
+├── file_io/
+│   └── win_sequential_reader.py# чтение файлов через Windows API
+├── config/
+│   ├── config.py               # загрузка конфигурации
+│   ├── timebase.py             # временны́е константы
+│   └── logger.py               # настройка логирования
+├── ui/
+│   └── controls.py             # панель управления (кнопки, слайдер)
+└── utils/
+    ├── utils.py                # вспомогательные функции
+    └── tcd_parser.py           # парсинг .tcd файлов
+
+Как это работает
+1. MasterClock — сердце синхронизации
+
+MasterClock открывает стереовыход через sounddevice.OutputStream. В коллбэке звуковой карты:
+
+    обновляется атомарный счётчик воспроизведённых семплов;
+
+    из внутренних очередей (отдельно для дорожки 2 и 3) извлекаются аудиоданные и микшируются в выходной буфер.
+
+Это гарантирует, что видео всегда идёт по тому же такту, что и аудио, без внешней коррекции дрейфа.
+
+Аудиоданные поступают от AudioDecoderStage через метод push_audio(track_id, samples). Отключение дорожек и mute управляются флагами track2_enabled / track3_enabled и _muted.
+2. Индексация и оконный доступ
+
+Индексный файл .idx (Dalet) отображается в память через mmap. LazyIndex строит «окно» — подмножество видео‑записей и аудиоданных вокруг текущей позиции. Окно автоматически расширяется при перемещении или росте live‑файла.
+3. Конвейер (ChunkPipeline)
+text
+
+ReaderStage → DemuxerStage → VideoDecoderStage
+                           → AudioDecoderStage
+
+    ReaderStage – читает сырые данные чанка из MP4‑файла.
+
+    DemuxerStage – разделяет видео‑NAL‑ы и аудио‑AAC‑фреймы.
+
+    VideoDecoderStage – декодирует H.264 в RGB24 и кладёт в FrameRingBuffer.
+
+    AudioDecoderStage – декодирует AAC в float64 и отправляет в MasterClock.push_audio().
+
+Планировщик StreamScheduler управляет очерёдностью загрузки чанков в зависимости от режима (нормальный, перемотка, пауза).
+4. Синхронизация видео
+
+SyncManager.get_display_frame() принимает текущий audio_clock (полученный от MasterClock) и выбирает кадр из FrameRingBuffer, чей PTS наиболее близок к этому времени. Устаревшие кадры отбрасываются.
+5. Управление воспроизведением
+
+    Play/Pause – PlaybackEngine.resume() запускает MasterClock.start(), pause() – останавливает MasterClock.stop(). Таймкод бежит только при активном MasterClock.
+
+    Перемотка (seek) – SeekEngine асинхронно находит ближайший IDR‑кадр, декодирует его и заполняет буфер. После завершения PlaybackEngine останавливает текущий конвейер и запускает новый с нужной позиции.
+
+    JKL‑перемотка – ускорение (×2, ×4, ×8) с автоматическим mute. При возврате в ×1 звук включается обратно.
+
+    Live‑старт – плеер автоматически позиционируется на total_frames – 1600 кадров от конца файла.
+
+6. GUI и управление дорожками
+
+    Слайдер – при захвате немедленно ставит плеер на паузу, после отпускания выполняет seek и остаётся на паузе до явного нажатия Play.
+
+    Кнопка Mute – переключает master_clock.set_muted().
+
+    Выбор дорожек – master_clock.set_track_enabled(2/3, bool). При отключении дорожки её очередь очищается.

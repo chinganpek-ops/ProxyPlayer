@@ -204,20 +204,14 @@ class WinSequentialReader:
         logger.debug(f"Указатель файла установлен на {offset}")
 
     def read_sequential(self, offset: int, size: int) -> bytes:
-        """
-        Последовательное чтение блока размером size с позиции offset.
-        Автоматически разбивает на чанки по 1 МБ с повторами.
-        Все аргументы явно приводятся к int для совместимости с ctypes.
-        """
-        chunk_size = 1024 * 1024  # 1 МБ
+        chunk_size = 1024 * 1024
         data = bytearray()
-        remaining = int(size)            # явное приведение
-        current_offset = int(offset)     # явное приведение
+        remaining = int(size)
+        current_offset = int(offset)
         max_retries = 3
 
-        logger.debug(f"Начало последовательного чтения: offset={current_offset}, size={remaining}")
         while remaining > 0:
-            to_read = int(min(chunk_size, remaining))   # явное приведение
+            to_read = int(min(chunk_size, remaining))
             block = b''
             for attempt in range(max_retries):
                 try:
@@ -230,10 +224,16 @@ class WinSequentialReader:
                 except OSError as e:
                     logger.warning(f"Попытка {attempt+1}/{max_retries} чтения не удалась: {e}")
                     if attempt < max_retries - 1:
+                        # Принудительно переоткрываем файл
                         try:
-                            self._open()  # переоткрываем файл
+                            self.close()
+                        except Exception:
+                            pass
+                        try:
+                            self._open()
                         except Exception as open_err:
                             logger.error(f"Не удалось переоткрыть файл: {open_err}")
+                            return bytes(data)
                         time.sleep(0.5)
                     else:
                         logger.error("Все попытки чтения исчерпаны")
@@ -247,7 +247,6 @@ class WinSequentialReader:
             remaining -= bytes_read_now
             if bytes_read_now < to_read:
                 remaining = 0
-        logger.debug(f"Последовательное чтение завершено, прочитано {len(data)} байт")
         return bytes(data)
 
     def close(self):

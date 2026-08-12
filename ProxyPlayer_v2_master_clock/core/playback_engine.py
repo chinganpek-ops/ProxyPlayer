@@ -1,8 +1,8 @@
 """
-playback_engine.py – движок воспроизведения для ProxyPlayer v1.4.
-audio_clock идёт по системному времени независимо от AudioOutput.
-Устранена зависимость от Qt-потока для таймера.
-Добавлен метод set_audio_output для ленивого подключения AudioOutput.
+playback_engine.py – движок воспроизведения для ProxyPlayer v2.
+Исправления:
+- seek не сбрасывает аудиоочереди (не вызывает MasterClock.reset).
+- После перемотки планировщик явно переводится в NORMAL режим.
 """
 
 import time
@@ -13,11 +13,10 @@ from typing import Optional
 import numpy as np
 
 from buffer.frame_buffer import FrameRingBuffer
-from buffer.audio_buffer import MultiTrackAudioBuffer
 from core.sync_manager import SyncManager
 from pipeline.chunk_pipeline import ChunkPipeline
 from seek.seek_engine import SeekEngine
-from output.audio_output import AudioOutput
+from core.master_clock import MasterClock
 from config.timebase import (
     AUDIO_SAMPLE_RATE,
     SAMPLES_PER_VIDEO_FRAME,
@@ -36,9 +35,8 @@ class PlaybackEngine:
         pipeline: ChunkPipeline,
         seek_engine: SeekEngine,
         sync_manager: SyncManager,
-        audio_output: Optional[AudioOutput],
+        master_clock: Optional[MasterClock],
         video_buffer: FrameRingBuffer,
-        audio_buffers: MultiTrackAudioBuffer,
         start_frame_offset: int = 0,
         total_frames: int = 0,
         fps: float = 25.0,
@@ -46,9 +44,8 @@ class PlaybackEngine:
         self._pipeline = pipeline
         self._seek_engine = seek_engine
         self._sync = sync_manager
-        self._audio_output = audio_output
+        self._master_clock = master_clock
         self._video_buffer = video_buffer
-        self._audio_buffers = audio_buffers
 
         self.start_frame_offset = start_frame_offset
         self.total_frames = total_frames
@@ -60,10 +57,6 @@ class PlaybackEngine:
         self._clock_lock = threading.Lock()
         self._current_frame_idx = 0
 
-        # Основа для хода audio_clock по системному времени
-        self._clock_start_time: Optional[float] = None
-        self._clock_start_pts: int = 0
-
         # JKL
         self._seek_speed = 1.0
         self._seek_speed_index = -1
@@ -72,31 +65,15 @@ class PlaybackEngine:
         self._seek_accumulator = 0.0
         self._normal_playing_state = False
 
-        self._video_ready_timer: Optional[threading.Timer] = None
         self._playback_started = False
 
-        # Защита от повторного seek
-        self._seeking = False
+        # Защита от повторного seek и поколение запросов
+        self._seek_generation = 0
         self._seek_lock = threading.Lock()
 
     # ------------------------------------------------------------------
-    def set_audio_output(self, audio_output: AudioOutput):
-        """Подключает AudioOutput, созданный в главном потоке."""
-        self._audio_output = audio_output
-
-    def _update_clock_from_system(self):
-        """Вычисляет audio_clock, прошедший с момента старта/возобновления."""
-        if self._clock_start_time is not None and self.playing:
-            elapsed = time.monotonic() - self._clock_start_time
-            with self._clock_lock:
-                self._audio_clock = self._clock_start_pts + int(AUDIO_SAMPLE_RATE * elapsed)
-
-    def _reset_clock_timer(self, pts: int):
-        """Запоминает текущее системное время и соответствующий pts."""
-        self._clock_start_time = time.monotonic()
-        self._clock_start_pts = pts
-        with self._clock_lock:
-            self._audio_clock = pts
+    def set_master_clock(self, master_clock: MasterClock):
+        self._master_clock = master_clock
 
     # ------------------------------------------------------------------
     def start_playback(self, global_start_frame: int, window_start_frame: int):
@@ -110,11 +87,11 @@ class PlaybackEngine:
 
         local_chunk = (global_start_frame - window_start_frame) // 12
         pts = video_frame_to_pts(global_start_frame)
-        self._reset_clock_timer(pts)
+        with self._clock_lock:
+            self._audio_clock = pts
         self._current_frame_idx = global_start_frame
 
         self._video_buffer.clear()
-        self._audio_buffers.clear_all()
 
         self._pipeline.start(start_local_chunk=local_chunk)
 
@@ -135,50 +112,63 @@ class PlaybackEngine:
             return
         self._paused = False
         self.playing = True
-        self._reset_clock_timer(self._audio_clock)   # начинаем отсчёт с текущего audio_clock
-        if self._audio_output:
-            self._audio_output.reset_clock(self._audio_clock)
+        if self._master_clock:
+            self._master_clock.start()
         self._sync.reset_drift()
-        if self._audio_output and not self._audio_output._active:
-            self._audio_output.start()
-        self._start_audio_when_video_ready()
 
     def pause(self):
         if not self.playing:
             return
         self.playing = False
         self._paused = True
-        if self._audio_output:
-            self._audio_output.stop()
-        self._stop_video_ready_timer()
+        if self._master_clock:
+            self._master_clock.stop()
 
     def stop(self):
         self.playing = False
         self._paused = False
         self._pipeline.stop()
-        if self._audio_output:
-            self._audio_output.stop()
-        self._stop_video_ready_timer()
+        if self._master_clock:
+            self._master_clock.stop()
 
     # ------------------------------------------------------------------
-    def seek(self, global_frame_idx: int, window: 'IndexWindow'):
+    def seek(self, global_frame_idx: int, window: 'IndexWindow',
+             on_complete: Optional[callable] = None):
         with self._seek_lock:
-            if self._seeking:
-                logger.debug("Seek already in progress, ignoring")
-                return
-            self._seeking = True
+            self._seek_generation += 1
+            gen = self._seek_generation
+            self.pause()
 
-        self.pause()
+        def _on_seek_complete_with_callback(buf, win, g):
+            self._on_seek_complete(buf, win, g)
+            if on_complete:
+                on_complete()
+
         self._seek_engine.seek_async(
             global_frame_idx,
-            on_complete=lambda buf: self._on_seek_complete(buf, window),
+            on_complete=lambda buf: _on_seek_complete_with_callback(buf, window, gen),
             on_error=lambda msg: logger.error(f"Seek error: {msg}"),
         )
 
-    def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow'):
-        self._video_buffer, buffer = buffer, self._video_buffer
-        buffer.clear()
+    def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow', gen: int):
+        with self._seek_lock:
+            if gen != self._seek_generation:
+                return
 
+        # Очищаем основной буфер
+        self._video_buffer.clear()
+
+        # Переносим кадры из временного буфера (результат seek) в основной
+        while True:
+            entry = buffer.peek_first()
+            if entry is None:
+                break
+            pts, frame = entry
+            if not self._video_buffer.try_push(frame, pts):
+                break
+            buffer.advance()
+
+        # Если перенос не удался (буфер заполнен), оставляем keep_last
         first = self._video_buffer.peek_first()
         if first:
             pts, frame = first
@@ -186,19 +176,16 @@ class PlaybackEngine:
             with self._clock_lock:
                 self._audio_clock = pts
             self._current_frame_idx = pts_to_video_frame(pts)
-            self._audio_buffers.clear_all()
-            if self._audio_output:
-                self._audio_output.reset_clock(pts)
+            if self._master_clock:
+                self._master_clock.set_clock(pts)
 
         local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
         self._pipeline.stop()
         self._pipeline.update_window(window)
+        self._pipeline._scheduler.set_normal_mode(local_chunk, window.total_chunks)
         self._pipeline.start(start_local_chunk=local_chunk)
         self._paused = True
         self.playing = False
-
-        with self._seek_lock:
-            self._seeking = False
 
     # ------------------------------------------------------------------
     # JKL
@@ -214,8 +201,8 @@ class PlaybackEngine:
         self._seek_speed = SEEK_SPEEDS[self._seek_speed_index]
         if self._seek_speed_index == 0:
             self._normal_playing_state = self.playing
-            if self._audio_output:
-                self._audio_output.set_volume(0.0)
+            if self._master_clock:
+                self._master_clock.set_muted(True)
         self._seek_accumulator = 0.0
         self._last_seek_time = time.monotonic()
 
@@ -226,8 +213,8 @@ class PlaybackEngine:
         self._seek_speed_index = -1
         self._seek_direction = 0
         self._seek_accumulator = 0.0
-        if self._audio_output:
-            self._audio_output.set_volume(0.8)
+        if self._master_clock:
+            self._master_clock.set_muted(False)
         if self._normal_playing_state and not self.playing:
             self.resume()
         elif not self._normal_playing_state and self.playing:
@@ -241,7 +228,9 @@ class PlaybackEngine:
 
     # ------------------------------------------------------------------
     def get_display_frame(self) -> Optional[np.ndarray]:
-        self._update_clock_from_system()  # обновляем audio_clock перед каждым кадром
+        if self._master_clock:
+            with self._clock_lock:
+                self._audio_clock = self._master_clock.get_audio_clock()
 
         if self._seek_direction != 0 and self._seek_speed > 1.0:
             now = time.monotonic()
@@ -259,16 +248,16 @@ class PlaybackEngine:
 
         return self._sync.get_display_frame(
             self._video_buffer,
-            self._audio_buffers,
             audio_clock=self._audio_clock,
             playing=self.playing,
         )
 
     def _fast_seek(self, frame_idx: int):
-        self._current_frame_idx = frame_idx
-        pts = video_frame_to_pts(frame_idx)
-        with self._clock_lock:
-            self._audio_clock = pts
+        with self._seek_lock:
+            self._current_frame_idx = frame_idx
+            pts = video_frame_to_pts(frame_idx)
+            with self._clock_lock:
+                self._audio_clock = pts
         self._video_buffer.drop_until(pts)
         first = self._video_buffer.peek_first()
         if first:
@@ -278,33 +267,6 @@ class PlaybackEngine:
     def audio_clock(self) -> int:
         with self._clock_lock:
             return self._audio_clock
-
-    # ------------------------------------------------------------------
-    def _start_audio_when_video_ready(self):
-        self._stop_video_ready_timer()
-        first = self._video_buffer.peek_first()
-        if first and first[0] <= self._audio_clock + SAMPLES_PER_VIDEO_FRAME // 2:
-            if self._audio_output:
-                self._audio_output.start()
-            return
-        self._video_ready_timer = threading.Timer(0.01, self._check_video_ready)
-        self._video_ready_timer.start()
-
-    def _check_video_ready(self):
-        if not self.playing:
-            return
-        first = self._video_buffer.peek_first()
-        if first and first[0] <= self._audio_clock + SAMPLES_PER_VIDEO_FRAME // 2:
-            if self._audio_output:
-                self._audio_output.start()
-        else:
-            self._video_ready_timer = threading.Timer(0.01, self._check_video_ready)
-            self._video_ready_timer.start()
-
-    def _stop_video_ready_timer(self):
-        if self._video_ready_timer:
-            self._video_ready_timer.cancel()
-            self._video_ready_timer = None
 
     # ------------------------------------------------------------------
     def get_local_timecode_str(self) -> str:
@@ -327,6 +289,4 @@ class PlaybackEngine:
 
     def close(self):
         self.stop()
-        with self._seek_lock:
-            self._seeking = False
         self._seek_engine.cancel_current()

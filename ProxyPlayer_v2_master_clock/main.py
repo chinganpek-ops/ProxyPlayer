@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-main.py – точка входа ProxyPlayer v1.
+main.py – точка входа ProxyPlayer v2.
 Запуск: python main.py [путь_к_mp4] [--managed] [--mirror <путь_к_зеркалу>]
 Режимы:
   - обычный плеер (main.py <mp4>)
@@ -179,7 +179,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("ProxyPlayer")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("2.0.0")
 
     parser = QCommandLineParser()
     parser.setApplicationDescription("Плеер для Dalet MP4")
@@ -226,9 +226,8 @@ def main():
     sys.excepthook = global_exception_hook
 
     # ──────────────────────────────────────────────
-    # Включаем отладку для аудио‑компонентов
+    # Включаем отладку для аудио‑компонентов (v2: MasterClock и pipeline)
     # ──────────────────────────────────────────────
-
     debug_handler = logging.StreamHandler(sys.stderr)
     debug_handler.setLevel(logging.DEBUG)
     debug_handler.setFormatter(logging.Formatter(
@@ -238,14 +237,14 @@ def main():
 
     for name in ["pipeline.chunk_pipeline.DemuxerStage",
                  "pipeline.chunk_pipeline.AudioDecoderStage",
-                 "buffer.audio_buffer"]:
+                 "core.master_clock"]:
         lg = logging.getLogger(name)
         lg.setLevel(logging.DEBUG)
         lg.addHandler(debug_handler)
         lg.propagate = False  # не дублируем в файл
 
     logger = logging.getLogger(__name__)
-    logger.info("Запуск ProxyPlayer v1")
+    logger.info("Запуск ProxyPlayer v2")
 
     # --- Пустой аргумент или "." ---
     if not args or (len(args) == 1 and args[0] in ('', '.', './', '.\\')):
@@ -255,7 +254,7 @@ def main():
         logger.info("Запуск без аргументов – открывается пустой менеджер")
         from player_window import ManagerWindow
         window = ManagerWindow(None, config, False)
-        window.setWindowTitle("ProxyPlayer v1 – Manager")
+        window.setWindowTitle("ProxyPlayer v2 – Manager")
         window.show()
         window.hide()   # сразу скрываем панель, остаётся только трей
         exit_code = app.exec_()
@@ -307,7 +306,7 @@ def main():
         else:
             from player_window import ManagerWindow
             window = ManagerWindow(mp4_path, config, use_moov)
-            window.setWindowTitle("ProxyPlayer v1 – Manager")
+            window.setWindowTitle("ProxyPlayer v2 – Manager")
             window.show()
             window.hide()   # сразу сворачиваем в трей
     except FileNotFoundError as e:

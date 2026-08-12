@@ -1,0 +1,253 @@
+Детальное описание модулей ProxyPlayer v2
+1. core/master_clock.py
+
+Назначение: Единый источник тактового сигнала и аудиовыхода на основе звуковой карты (sounddevice). Заменяет старый AudioOutput и MultiTrackAudioBuffer.
+
+Ключевой класс: MasterClock
+
+Основные методы:
+
+    start() / stop() – запуск и остановка выходного потока.
+
+    push_audio(track_id, samples) – добавить декодированные аудиосемплы (float64) в очередь дорожки (2 или 3).
+
+    get_audio_clock() – возвращает текущее время в семплах (с учётом audio_delay).
+
+    set_clock(pts) – принудительная установка счётчика (при перемотке).
+
+    reset() – сброс счётчика и очистка очередей.
+
+    set_track_enabled(track_id, bool) / set_muted(bool) – управление дорожками и mute.
+
+    get_stats() – словарь с текущими метриками (samples_played, queue_size, underruns…).
+
+Внутренняя реализация:
+
+    Использует sounddevice.OutputStream (стерео, float32).
+
+    Коллбэк _callback(outdata, frames, time, status) вызывается аудиопотоком, обновляет атомарный счётчик _samples_played и микширует аудиоданные из двух deque‑очередей (для левого и правого каналов) в выходной буфер.
+
+    Все операции с очередями защищены threading.Lock.
+
+Зависимости: numpy, sounddevice, threading, collections.deque.
+2. core/playback_engine.py
+
+Назначение: Движок воспроизведения, связывающий конвейер (ChunkPipeline), SeekEngine, SyncManager и MasterClock. Управляет состоянием play/pause/stop, перемоткой и JKL.
+
+Класс: PlaybackEngine
+
+Ключевые методы:
+
+    start_playback(global_start_frame, window_start_frame) – инициализирует конвейер, очищает буфер, запускает загрузку чанков.
+
+    resume() – запускает MasterClock.start() и переводит движок в состояние воспроизведения.
+
+    pause() / stop() – останавливает MasterClock и конвейер.
+
+    seek(frame_idx, window) – выполняет асинхронный seek с помощью SeekEngine, по завершении обновляет буфер и сбрасывает MasterClock.
+
+    set_speed(direction) / reset_speed() – управление JKL‑перемоткой с автоматическим mute.
+
+    get_display_frame() – получает текущий audio_clock от MasterClock и вызывает SyncManager.get_display_frame() для выбора кадра.
+
+Взаимодействие:
+
+    Получает MasterClock через set_master_clock().
+
+    При возобновлении/остановке управляет MasterClock.start()/stop().
+
+    При seek сбрасывает MasterClock.reset() и set_clock().
+
+3. core/stream_controller.py
+
+Назначение: Фасад, связывающий все компоненты плеера. Создаётся в PlayerWidget, запускает фоновую инициализацию индекса и декодеров, а в start_playback() создаёт MasterClock и запускает воспроизведение.
+
+Класс: StreamController
+
+Основные методы:
+
+    start_playback() – создаёт MasterClock в главном потоке, подключает его к PlaybackEngine и ChunkPipeline, запускает загрузку первого кадра.
+
+    resume() / pause() / stop() – делегируют в PlaybackEngine.
+
+    seek_absolute(frame_idx) – перемотка в заданный кадр.
+
+    get_display_frame() – вызывает PlaybackEngine.get_display_frame().
+
+    audio_clock – свойство, возвращающее текущий audio_clock движка.
+
+    set_active_tracks(tracks) / set_muted(muted) – управление дорожками и mute через MasterClock.
+
+    close() – корректное завершение всех компонентов, остановка и закрытие MasterClock.
+
+Примечание: _background_init() выполняется в отдельном потоке и не создаёт AudioOutput (в отличие от v1). MasterClock создаётся синхронно в главном потоке при start_playback().
+4. core/sync_manager.py
+
+Назначение: Синхронизация видео с аудио. Видео ведомое, аудио ведущее. Выбирает кадр из FrameRingBuffer, ближайший к текущему audio_clock, отбрасывает устаревшие.
+
+Класс: SyncManager
+
+Ключевой метод: get_display_frame(video_buffer, audio_clock, playing)
+
+    Если плеер на паузе, возвращает последний показанный кадр (keep_last).
+
+    Иначе удаляет кадры, чей PTS меньше audio_clock - MAX_VIDEO_LAG, и показывает первый подходящий кадр.
+
+Упрощение в v2: Удалена вся логика коррекции дрейфа, так как audio_clock теперь поступает от аппаратной звуковой карты и не требует сглаживания.
+5. pipeline/chunk_pipeline.py
+
+Назначение: Трёхэтапный конвейер обработки чанков.
+
+Компоненты:
+
+    ReaderStage – читает MP4‑данные чанка через WinSequentialReader, используя смещения из IndexWindow.
+
+    DemuxerStage – разбирает сырые данные на видео‑NALы и аудио‑AAC‑фреймы, используя cached_offsets окна.
+
+    VideoDecoderStage – декодирует H.264 в RGB24 и помещает в FrameRingBuffer.
+
+    AudioDecoderStage – декодирует AAC в float64 и отправляет в MasterClock.push_audio(track_id, pcm_block).
+
+Класс: ChunkPipeline
+
+    start(start_local_chunk) – запускает все стадии.
+
+    stop() – останавливает стадии и очищает очереди.
+
+    update_window(new_window) – обновляет окно индекса (при seek или росте файла).
+
+    get_window_snapshot() – потокобезопасный доступ к текущему окну.
+
+    set_master_clock(master_clock) – передаёт MasterClock в AudioDecoderStage.
+
+Очереди: raw_queue, video_queue, audio_queue (с ограничением размера, для предотвращения переполнения).
+6. pipeline/stream_scheduler.py
+
+Назначение: Планировщик загрузки чанков с учётом текущего режима (нормальный, seek, fast‑forward, пауза) и заполненности видеобуфера.
+
+Класс: StreamScheduler
+
+Режимы:
+
+    NORMAL – последовательная загрузка чанков вперёд.
+
+    SEEK – приоритетная загрузка целевого чанка и соседних.
+
+    FAST_FORWARD – загрузка каждого N‑го чанка (stride зависит от скорости).
+
+    PAUSE – заполнение буфера до максимального размера.
+
+Управление: set_normal_mode(), set_seek_mode(), set_fast_forward_mode(), set_pause_mode().
+Метод get_next_chunk() возвращает следующий локальный индекс чанка или None, если буфер заполнен.
+7. pipeline/adaptive_chunk.py
+
+Назначение: Определяет размер чанка и шаг перемотки в зависимости от текущей скорости.
+
+Класс: AdaptiveChunkStrategy
+
+    get_chunk_size(speed) – возвращает количество кадров в чанке (12, 24 или 48).
+
+    get_fast_forward_stride(speed) – шаг для JKL‑перемотки.
+
+    get_lookahead_chunks(speed, buffer_size) – количество чанков для предзагрузки.
+
+8. index/lazy_index.py
+
+Назначение: Оконный доступ к индексу без загрузки полного .idx в память.
+
+Классы:
+
+    LazyIndex – управляет построением окна.
+
+    IndexWindow – хранит локальные срезы видео‑записей, аудиотреков, смещений чанков в пределах окна.
+
+Методы:
+
+    open_window(center_frame) – строит окно вокруг заданного кадра.
+
+    expand_window(new_end_frame) – расширяет окно при росте файла.
+
+    move_window_async(center_frame, callback) – асинхронное перемещение окна.
+
+Особенности: Все индексы внутри окна – локальные (от 0 до N‑1), что упрощает работу конвейера. Кэшируются абсолютные смещения чанков (cached_offsets).
+9. index/moov_builder.py
+
+Назначение: Построение структур данных из .idx файла (видео‑цепочек, аудиотреков, чанков).
+
+Функции:
+
+    fast_video_records(mm_193) – быстрая фильтрация и сортировка видеозаписей.
+
+    build_audio_tracks(c9_records, track_filter) – построение аудиотреков с расчётом size2.
+
+    build_chunks_in_range() / build_chunks_from_cached_offsets() – построение чанков в заданном диапазоне.
+
+    build_audio_chunks_in_range() – построение аудиочанков для окна.
+
+    incremental_append_* – инкрементальное добавление новых записей при росте файла.
+
+Математика: Абсолютное смещение записи = f1 + f2 * SEGMENT_SIZE - 4. Размер чанка вычисляется как разность смещений первого кадра текущего чанка и первого кадра следующего.
+10. index/idx_cache.py
+
+Назначение: Кэширование удалённого .idx файла локально (зеркало) и отображение в память через mmap.
+
+Функции:
+
+    prepare_mirror(idx_path) – синхронизирует локальное зеркало с удалённым (вызывается только менеджером).
+
+    get_mirror_path(idx_path) – возвращает путь к зеркалу без докачки (используется плеерами).
+
+    open_idx_mmap(mirror_path) – отображает зеркало в память, извлекает структурированные массивы mm_193 и mm_c9.
+
+    cleanup_cache(idx_path) – удаляет локальное зеркало.
+
+11. seek/seek_engine.py
+
+Назначение: Асинхронный поиск и декодирование целевого кадра с возможностью отмены.
+
+Классы: SeekEngine, SeekRequest
+
+Методы:
+
+    seek_async(frame_idx, on_complete, on_error) – запускает поиск в отдельном потоке, возвращает SeekRequest.
+
+    seek_sync(frame_idx) – синхронный вариант (блокирует вызывающий поток).
+
+    cancel_current() – отменяет текущий запрос.
+
+Логика поиска: Использует бинарный поиск по idr_frames внутри окна, читает сырые данные от IDR до целевого кадра, декодирует и заполняет FrameRingBuffer.
+12. decode/decoder.py и decode/audio_decoder.py
+
+decoder.py – программный и аппаратный (NVIDIA CUDA) декодер H.264. Методы decode_sample(data) и decode_sample_with_pts(data, base_pts). Поддерживает filter_avcc().
+
+audio_decoder.py – декодер AAC. Принимает raw AAC‑фреймы, добавляет ADTS‑заголовок, возвращает массив float64. Имеет прайминг для устранения ошибок холодного старта.
+13. buffer/frame_buffer.py
+
+Назначение: Потокобезопасный кольцевой буфер видеокадров (PTS + RGB24).
+
+Класс: FrameRingBuffer
+
+    try_push(frame, pts) – неблокирующая вставка.
+
+    peek_first() – чтение первого кадра без удаления.
+
+    advance() – удаление первого кадра.
+
+    drop_until(pts_threshold) – массовое удаление устаревших кадров.
+
+    update_keep_last(frame, pts) – сохранение последнего показанного кадра (для паузы/пустого буфера).
+
+14. output/video_widget.py
+
+Назначение: Отображение видео через QOpenGLWidget. Поддерживает aspect ratio (fit, 4:3, 16:9), водяной знак, заглушки загрузки и окончания трансляции.
+15. file_io/win_sequential_reader.py
+
+Назначение: Низкоуровневое чтение файлов через Windows API с флагом FILE_FLAG_SEQUENTIAL_SCAN для оптимизации последовательного доступа. Поддерживает синхронный и асинхронный режимы. Метод read_sequential(offset, size) автоматически разбивает большие блоки на чанки по 1 МБ и повторяет чтение при ошибках.
+16. player_window.py (GUI)
+
+PlayerWidget – основное окно плеера. Содержит GLVideoWidget, элементы управления (слайдер, кнопки Play/Pause, перемотка, mute, выбор дорожек). Таймер рендеринга обновляет кадр каждые 40 мс.
+
+ManagerWindow – панель управления (трей), поддерживающая запуск нескольких плееров, приём команд от Dalet Video Helper, размещение окон.
+17. main.py
+
+Точка входа. Обрабатывает аргументы командной строки (--managed, --mirror, --index-builder), настраивает логирование, запускает пустой менеджер или открывает файл непосредственно.

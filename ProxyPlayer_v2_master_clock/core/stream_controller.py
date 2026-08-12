@@ -1,11 +1,8 @@
 """
-stream_controller.py – фасад для всех компонентов ProxyPlayer v1.
-Архитектурное изменение v1.1:
-- плеер больше не вызывает prepare_mirror (зеркалом владеет IndexService/менеджер).
-- использует переданный mirror_path или ожидает готовности зеркала.
-- защита от повторного запуска start_playback.
-- обновление окна в пайплайне при live-старте.
-- AudioOutput создаётся в главном потоке (в start_playback).
+stream_controller.py – фасад для всех компонентов ProxyPlayer v2.
+Использует MasterClock вместо AudioOutput и MultiTrackAudioBuffer.
+AudioClock и синхронизация идут от звуковой карты.
+Исправление: seek_absolute принимает callback для уведомления GUI о завершении seek.
 """
 
 import time
@@ -17,7 +14,6 @@ from typing import Optional, List
 import numpy as np
 
 from buffer.frame_buffer import FrameRingBuffer
-from buffer.audio_buffer import MultiTrackAudioBuffer
 from decode.decoder import Decoder
 from decode.audio_decoder import AudioDecoder
 from index.lazy_index import LazyIndex, IndexWindow
@@ -28,7 +24,7 @@ from pipeline.chunk_pipeline import ChunkPipeline
 from seek.seek_engine import SeekEngine
 from core.sync_manager import SyncManager
 from core.playback_engine import PlaybackEngine
-from output.audio_output import AudioOutput
+from core.master_clock import MasterClock
 from config.timebase import (
     SAMPLES_PER_VIDEO_FRAME, video_frame_to_pts, pts_to_video_frame,
 )
@@ -74,15 +70,16 @@ class StreamController:
         self._finalized = False
         self.mirror_path = mirror_path
 
-        # Буферы
+        # Буферы видео
         self.buffer_main = FrameRingBuffer(max_frames=buffer_size)
-        self.audio_buffers = MultiTrackAudioBuffer(capacity_samples=1440000)
+
+        # Аудио теперь через MasterClock (будет создан в start_playback)
+        self.master_clock: Optional[MasterClock] = None
+        self.active_tracks = [2, 3]
 
         # Декодеры – создаются в _background_init
         self.decoder: Optional[Decoder] = None
         self.audio_decoders: List[AudioDecoder] = []
-        self.audio_output: Optional[AudioOutput] = None
-        self.active_tracks = [2, 3]
 
         # Компоненты новой архитектуры – инициализируются в _background_init
         self._lazy_index: Optional[LazyIndex] = None
@@ -177,28 +174,28 @@ class StreamController:
             )
             self.audio_decoders = [AudioDecoder(DEFAULT_ASC), AudioDecoder(DEFAULT_ASC)]
 
-            # 7. Создаём конвейер
+            # 7. Создаём конвейер (master_clock пока None)
             self._pipeline = ChunkPipeline(
                 self.mp4_path, window, self.decoder, self.audio_decoders,
-                self.buffer_main, self.audio_buffers,
+                self.buffer_main, None  # master_clock будет передан позже
             )
 
             # 8. Создаём Reader и SeekEngine
             reader = WinSequentialReader(self.mp4_path, 0, False)
             self._seek_engine = SeekEngine(self._lazy_index, self.decoder, reader)
 
-            # 9. Создаём PlaybackEngine (без AudioOutput – он будет подключён позже)
+            # 9. Создаём PlaybackEngine (MasterClock будет передан позже)
             self._playback = PlaybackEngine(
                 self._pipeline, self._seek_engine, self._sync_mgr,
-                None,          # audio_output пока None
-                self.buffer_main, self.audio_buffers,
+                None,          # master_clock пока None
+                self.buffer_main,
                 start_frame_offset=self.start_frame_offset,
                 total_frames=self.total_frames,
                 fps=self.fps,
             )
 
             self._ready.set()
-            logger.info("StreamController готов (без AudioOutput)")
+            logger.info("StreamController готов (без MasterClock)")
         except Exception as e:
             self._init_error = str(e)
             logger.exception("Ошибка инициализации StreamController")
@@ -231,7 +228,6 @@ class StreamController:
         self._playback_started = True
 
         try:
-            # Открываем окно для актуального стартового кадра (live или начало)
             if self._start_from_live and not self._finalized:
                 start_frame = max(0, self.total_frames - LIVE_SEEK_OFFSET_FRAMES)
             else:
@@ -242,27 +238,22 @@ class StreamController:
                 logger.error("Окно индекса не открыто")
                 return
 
-            # Обновляем окно в пайплайне
             if self._pipeline:
                 self._pipeline.update_window(window)
 
-            # --- Создаём AudioOutput в ГЛАВНОМ ПОТОКЕ (start_playback вызывается из GUI) ---
-            if self.audio_output is None:
-                try:
-                    self.audio_output = AudioOutput(
-                        self.audio_buffers,
-                        on_clock_update=lambda samples: setattr(self._playback, '_audio_clock', samples)
-                    )
-                    self._playback.set_audio_output(self.audio_output)
-                    # Устанавливаем активные треки
-                    self.audio_output.set_active_tracks(self.active_tracks)
-                    logger.info("AudioOutput создан и подключён в главном потоке")
-                except Exception as e:
-                    logger.error(f"Не удалось создать AudioOutput: {e}")
-                    self.audio_output = None
-            # ----------------------------------------------------------------------------
+            # --- Создаём MasterClock в ГЛАВНОМ ПОТОКЕ ---
+            if self.master_clock is None:
+                self.master_clock = MasterClock(sample_rate=48000, buffer_size=1024)
+                self.master_clock.audio_delay = self.audio_delay_samples / 48000.0
+                self.master_clock.set_track_enabled(2, 2 in self.active_tracks)
+                self.master_clock.set_track_enabled(3, 3 in self.active_tracks)
+                self._playback.set_master_clock(self.master_clock)
+                if self._pipeline:
+                    self._pipeline.set_master_clock(self.master_clock)
+                logger.info("MasterClock создан и подключён в главном потоке")
+            else:
+                self.master_clock.reset()
 
-            # Останавливаем пайплайн, если он был запущен (на всякий случай)
             if self._pipeline:
                 self._pipeline.stop()
 
@@ -308,7 +299,12 @@ class StreamController:
         elif self._paused:
             self.resume()
 
-    def seek_absolute(self, frame_idx: int):
+    def seek_absolute(self, frame_idx: int, callback=None):
+        """
+        Перемотка в абсолютный кадр.
+        :param frame_idx: целевой номер кадра (глобальный)
+        :param callback: функция без аргументов, вызываемая после завершения seek
+        """
         if not self._ensure_ready():
             return
         try:
@@ -318,7 +314,9 @@ class StreamController:
             if window is None:
                 logger.error(f"Не удалось открыть окно для кадра {frame_idx}")
                 return
-            self._playback.seek(frame_idx, window)
+            self._playback.seek(frame_idx, window, on_complete=callback)
+            self.playing = False
+            self._paused = True
         except Exception as e:
             logger.exception(f"Ошибка в seek_absolute({frame_idx})")
 
@@ -393,11 +391,13 @@ class StreamController:
 
     def set_active_tracks(self, tracks: List[int]):
         self.active_tracks = [t for t in tracks if t in (2, 3)]
-        if self.audio_output:
-            try:
-                self.audio_output.set_active_tracks(self.active_tracks)
-            except Exception as e:
-                logger.exception("Ошибка в set_active_tracks")
+        if self.master_clock:
+            self.master_clock.set_track_enabled(2, 2 in self.active_tracks)
+            self.master_clock.set_track_enabled(3, 3 in self.active_tracks)
+
+    def set_muted(self, muted: bool):
+        if self.master_clock:
+            self.master_clock.set_muted(muted)
 
     def close(self):
         if self._closed:
@@ -412,7 +412,7 @@ class StreamController:
                 ad.close()
             if self._lazy_index:
                 self._lazy_index.close()
-            if self.audio_output:
-                self.audio_output.stop()
+            if self.master_clock:
+                self.master_clock.close()
         except Exception as e:
             logger.exception("Ошибка при закрытии StreamController")

@@ -1,0 +1,791 @@
+Создание StreamController для \\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.mp4
+13:05:29 | INFO     | buffer.frame_buffer | FrameRingBuffer создан: max_frames=600
+13:05:29 | INFO     | buffer.audio_buffer | Созданы аудиобуферы для дорожек 2..17 с ёмкостью 1440000 сэмплов
+13:05:29 | INFO     | file_io.ref_parser | Разбор .ref: \\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.mp4.ref (10606 байт)
+13:05:29 | DEBUG    | file_io.ref_parser | Извлечён ftyp: 28 байт
+13:05:29 | DEBUG    | file_io.ref_parser | Извлечён avcC: 62 байт
+13:05:29 | DEBUG    | decode.decoder | CPU-декодер: thread_type=AUTO, thread_count=0
+13:05:29 | DEBUG    | decode.audio_decoder | AudioDecoder создан с ASC 1188
+13:05:29 | DEBUG    | decode.audio_decoder | AudioDecoder создан с ASC 1188
+Ожидание инициализации...
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Открытие файла: \\10.20.49.171\DaletProxy\LSU\LR_2689\idx\mp4\1887693_2026-07-31T12-10-16872.idx, overlapped=False
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Файл успешно открыт, HANDLE=1004
+13:05:29 | INFO     | index.idx_cache | Докачка зеркала: с 87140045 байт, объём 2598483 байт
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=87140045, size=2598483
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 87140045
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Прочитано 1048576 байт синхронно с 87140045
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 88188621
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Прочитано 1048576 байт синхронно с 88188621
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 89237197
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Прочитано 501331 байт синхронно с 89237197
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 2598483 байт
+13:05:29 | INFO     | index.idx_cache | Зеркало обновлено: было 87140112 байт, стало 89738528
+13:05:29 | DEBUG    | file_io.win_sequential_reader | Закрытие HANDLE 1004
+13:05:29 | DEBUG    | utils.utils | GetFileSizeEx(\\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.mp4) = 1250951196
+13:05:29 | INFO     | index.idx_cache | mmap открыт для LR_2689_idx_mp4_1887693_2026-07-31T12-10-16872.idx.idx: 193=82488, C9=1241198
+13:05:30 | INFO     | index.lazy_index | Окно открыто: кадры 0-3750 (чанки 0-313)
+13:05:30 | INFO     | utils.tcd_parser | Парсинг .tcd: \\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.tcd
+13:05:30 | DEBUG    | utils.tcd_parser | Содержимое .tcd: 'PAL,0/12:10:00:00,'
+13:05:30 | DEBUG    | utils.tcd_parser | Заголовок: 'PAL', хвост: '0/12:10:00:00'
+13:05:30 | DEBUG    | utils.tcd_parser | После удаления номера кадра: '12:10:00:00'
+13:05:30 | INFO     | utils.tcd_parser | Начальный таймкод: 12:10:00;00
+13:05:30 | DEBUG    | file_io.win_sequential_reader | Открытие файла: \\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.mp4, overlapped=False
+13:05:30 | DEBUG    | file_io.win_sequential_reader | Файл успешно открыт, HANDLE=1036
+13:05:30 | INFO     | core.stream_controller | StreamController готов
+Инициализация завершена.
+Запуск воспроизведения...
+13:05:31 | INFO     | buffer.audio_buffer | Все аудиобуферы очищены
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Открытие файла: \\10.20.49.171\DaletProxy\LSU\LR_2689\1887693_2026-07-31T12-10-16872.mp4, overlapped=False
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Файл успешно открыт, HANDLE=1064
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=44, size=145228
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 44
+
+--- t=0.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=0, free_slots=600
+  scheduler: mode=NORMAL, current_chunk=1, total_chunks=313, loaded=1
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=0, video_pkt=0, audio_pkt=0
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 145228 байт синхронно с 44
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 145228 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=145272, size=146534
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 145272
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 146534 байт синхронно с 145272
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 146534 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=291806, size=158380
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 291806
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 158380 байт синхронно с 291806
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 158380 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=450186, size=155287
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 450186
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 155287 байт синхронно с 450186
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 155287 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=605473, size=117050
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 605473
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 117050 байт синхронно с 605473
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 117050 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=722523, size=161266
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 722523
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=16816024, pos=2521
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 161266 байт синхронно с 722523
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 161266 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=883789, size=168930
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 883789
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 168930 байт синхронно с 883789
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 168930 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1052719, size=182552
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1052719
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 182552 байт синхронно с 1052719
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 182552 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1235271, size=187186
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1235271
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 187186 байт синхронно с 1235271
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 187186 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1422457, size=146585
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1422457
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 146585 байт синхронно с 1422457
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 146585 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1569042, size=202427
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1569042
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 202427 байт синхронно с 1569042
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 202427 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1771469, size=200893
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1771469
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20067116, pos=3888
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 200893 байт синхронно с 1771469
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 200893 байт
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=1972362, size=205258
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 1972362
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 205258 байт синхронно с 1972362
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 205258 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20722476, pos=4140
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=2177620, size=200830
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 2177620
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 200830 байт синхронно с 2177620
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 200830 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19280684, pos=2644
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=2378450, size=145748
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 2378450
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 145748 байт синхронно с 2378450
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 145748 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18388914, pos=1645
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=2524198, size=332122
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 2524198
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 332122 байт синхронно с 2524198
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 332122 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20460332, pos=4528
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=2856320, size=279028
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 2856320
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 279028 байт синхронно с 2856320
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 279028 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19280685, pos=4507
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=3135348, size=276877
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 3135348
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 276877 байт синхронно с 3135348
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 276877 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19551021, pos=4289
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=3412225, size=281167
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 3412225
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 281167 байт синхронно с 3412225
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 281167 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19804973, pos=3598
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=3693392, size=189722
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 3693392
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 189722 байт синхронно с 3693392
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 189722 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19673900, pos=2357
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=3883114, size=305813
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 3883114
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 305813 байт синхронно с 3883114
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 305813 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19018541, pos=5868
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=4188927, size=291581
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 4188927
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 291581 байт синхронно с 4188927
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 291581 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20198188, pos=6111
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=4480508, size=262230
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 4480508
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 262230 байт синхронно с 4480508
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 262230 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19682092, pos=6247
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=4742738, size=250581
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 4742738
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 250581 байт синхронно с 4742738
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 250581 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20067116, pos=4970
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=4993319, size=173670
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 4993319
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 173670 байт синхронно с 4993319
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 173670 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19804973, pos=2192
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=5166989, size=260238
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 5166989
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Прочитано 260238 байт синхронно с 5166989
+13:05:31 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 260238 байт
+13:05:31 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19673900, pos=22518
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=5427227, size=259471
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 5427227
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 259471 байт синхронно с 5427227
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 259471 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20771628, pos=24170
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=5686698, size=256223
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 5686698
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 256223 байт синхронно с 5686698
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 256223 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18756396, pos=25183
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=5942921, size=267110
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 5942921
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 267110 байт синхронно с 5942921
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 267110 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20640557, pos=23387
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=6210031, size=162436
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 6210031
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 162436 байт синхронно с 6210031
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 162436 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20329262, pos=16083
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=6372467, size=236444
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 6372467
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 236444 байт синхронно с 6372467
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 236444 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19673901, pos=30441
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=6608911, size=225982
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 6608911
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 225982 байт синхронно с 6608911
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 225982 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20591368, pos=28343
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=6834893, size=206598
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 6834893
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 206598 байт синхронно с 6834893
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 206598 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18764589, pos=23221
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=7041491, size=224164
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 7041491
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 224164 байт синхронно с 7041491
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 224164 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20198188, pos=17079
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=7265655, size=160241
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 7265655
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 160241 байт синхронно с 7265655
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 160241 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20067117, pos=17737
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=7425896, size=231313
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 7425896
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 231313 байт синхронно с 7425896
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 231313 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19936045, pos=20051
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=7657209, size=218603
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 7657209
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 218603 байт синхронно с 7657209
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 218603 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18651046, pos=7275
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=7875812, size=222576
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 7875812
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 222576 байт синхронно с 7875812
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 222576 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19280685, pos=4085
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8098388, size=218537
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8098388
+
+--- t=1.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=331, free_slots=269
+  scheduler: mode=NORMAL, current_chunk=39, total_chunks=313, loaded=39
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 218537 байт синхронно с 8098388
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 218537 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19542828, pos=8677
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8316925, size=155262
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8316925
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 155262 байт синхронно с 8316925
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 155262 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18887469, pos=13031
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8472187, size=119566
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8472187
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 119566 байт синхронно с 8472187
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 119566 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20329261, pos=17041
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8591753, size=107375
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8591753
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 107375 байт синхронно с 8591753
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 107375 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19411757, pos=17456
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8699128, size=118442
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8699128
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 118442 байт синхронно с 8699128
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 118442 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18625325, pos=11782
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8817570, size=125610
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8817570
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 125610 байт синхронно с 8817570
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 125610 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20067117, pos=9983
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=8943180, size=95885
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 8943180
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 95885 байт синхронно с 8943180
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 95885 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20591405, pos=11125
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9039065, size=119711
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9039065
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 119711 байт синхронно с 9039065
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 119711 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19542824, pos=14979
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9158776, size=116517
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9158776
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 116517 байт синхронно с 9158776
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 116517 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19044250, pos=16606
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9275293, size=119182
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9275293
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 119182 байт синхронно с 9275293
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 119182 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19018541, pos=15123
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9394475, size=117536
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9394475
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 117536 байт синхронно с 9394475
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 117536 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19804969, pos=10331
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9512011, size=91321
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9512011
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 91321 байт синхронно с 9512011
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 91321 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20198188, pos=15974
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9603332, size=118402
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9603332
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 118402 байт синхронно с 9603332
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 118402 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18502444, pos=1452
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9721734, size=123210
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9721734
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 123210 байт синхронно с 9721734
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 123210 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=18101037, pos=1375
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9844944, size=126460
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9844944
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 126460 байт синхронно с 9844944
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 126460 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19280673, pos=1177
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=9971404, size=121560
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 9971404
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 121560 байт синхронно с 9971404
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 121560 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=17733554, pos=1716
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10092964, size=90991
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10092964
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 90991 байт синхронно с 10092964
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 90991 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19804973, pos=704
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10183955, size=123660
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10183955
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 123660 байт синхронно с 10183955
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 123660 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20460333, pos=1539
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10307615, size=117305
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10307615
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 117305 байт синхронно с 10307615
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 117305 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19804972, pos=1467
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10424920, size=112423
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10424920
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 112423 байт синхронно с 10424920
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 112423 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19673901, pos=1540
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10537343, size=111847
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10537343
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 111847 байт синхронно с 10537343
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 111847 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19673901, pos=1861
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10649190, size=90839
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10649190
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 90839 байт синхронно с 10649190
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 90839 байт
+13:05:32 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=20591405, pos=744
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10740029, size=127934
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10740029
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Прочитано 127934 байт синхронно с 10740029
+13:05:32 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 127934 байт
+
+--- t=2.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=61, total_chunks=313, loaded=61
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:33 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 60: 
+13:05:33 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 56: 
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10867963, size=128237
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10867963
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Прочитано 128237 байт синхронно с 10867963
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 128237 байт
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=10996200, size=138090
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 10996200
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Прочитано 138090 байт синхронно с 10996200
+13:05:33 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 138090 байт
+
+--- t=3.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=63, total_chunks=313, loaded=62
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:34 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 57: 
+13:05:34 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 62: 
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=11134290, size=174213
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 11134290
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Прочитано 174213 байт синхронно с 11134290
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 174213 байт
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=11308503, size=156537
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 11308503
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Прочитано 156537 байт синхронно с 11308503
+13:05:34 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 156537 байт
+
+--- t=4.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=65, total_chunks=313, loaded=63
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:35 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 58: 
+13:05:35 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=11465040, size=213274
+13:05:35 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 11465040
+13:05:35 | DEBUG    | file_io.win_sequential_reader | Прочитано 213274 байт синхронно с 11465040
+13:05:35 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 213274 байт
+
+--- t=5.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=66, total_chunks=313, loaded=64
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:37 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 59: 
+13:05:37 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=11678314, size=216193
+13:05:37 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 11678314
+13:05:37 | DEBUG    | file_io.win_sequential_reader | Прочитано 216193 байт синхронно с 11678314
+13:05:37 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 216193 байт
+
+--- t=6.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=67, total_chunks=313, loaded=65
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:38 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 66: 
+13:05:38 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 61: 
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=11894507, size=213637
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 11894507
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Прочитано 213637 байт синхронно с 11894507
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 213637 байт
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=12108144, size=214064
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 12108144
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Прочитано 214064 байт синхронно с 12108144
+13:05:38 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 214064 байт
+
+--- t=7.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=69, total_chunks=313, loaded=66
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:39 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 63: 
+13:05:39 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 68: 
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=12322208, size=366444
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 12322208
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Прочитано 366444 байт синхронно с 12322208
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 366444 байт
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=12688652, size=345361
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 12688652
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Прочитано 345361 байт синхронно с 12688652
+13:05:39 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 345361 байт
+
+--- t=8.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=71, total_chunks=313, loaded=67
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:40 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 64: 
+13:05:40 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=13034013, size=305066
+13:05:40 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 13034013
+13:05:40 | DEBUG    | file_io.win_sequential_reader | Прочитано 305066 байт синхронно с 13034013
+13:05:40 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 305066 байт
+
+--- t=9.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=72, total_chunks=313, loaded=68
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:41 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 71: 
+13:05:41 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 65: 
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=13339079, size=274404
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 13339079
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Прочитано 274404 байт синхронно с 13339079
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 274404 байт
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=13613483, size=225778
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 13613483
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Прочитано 225778 байт синхронно с 13613483
+13:05:41 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 225778 байт
+
+--- t=10.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=74, total_chunks=313, loaded=69
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:42 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 67: 
+13:05:42 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=13839261, size=251561
+13:05:42 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 13839261
+13:05:42 | DEBUG    | file_io.win_sequential_reader | Прочитано 251561 байт синхронно с 13839261
+13:05:42 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 251561 байт
+
+--- t=11.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=75, total_chunks=313, loaded=70
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:43 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 74: 
+13:05:43 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 69: 
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=14090822, size=228227
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 14090822
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Прочитано 228227 байт синхронно с 14090822
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 228227 байт
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=14319049, size=247200
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 14319049
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Прочитано 247200 байт синхронно с 14319049
+13:05:43 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 247200 байт
+
+--- t=12.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=77, total_chunks=313, loaded=71
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:44 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 76: 
+13:05:44 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 70: 
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=14566249, size=232269
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 14566249
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Прочитано 232269 байт синхронно с 14566249
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 232269 байт
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=14798518, size=186945
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 14798518
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Прочитано 186945 байт синхронно с 14798518
+13:05:44 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 186945 байт
+
+--- t=13.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=79, total_chunks=313, loaded=72
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:45 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 72: 
+13:05:45 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 78: 
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=14985463, size=176775
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 14985463
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Прочитано 176775 байт синхронно с 14985463
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 176775 байт
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15162238, size=147927
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15162238
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Прочитано 147927 байт синхронно с 15162238
+13:05:45 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 147927 байт
+
+--- t=14.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=81, total_chunks=313, loaded=73
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:46 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 80: 
+13:05:46 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 73: 
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15310165, size=150986
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15310165
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Прочитано 150986 байт синхронно с 15310165
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 150986 байт
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15461151, size=162940
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15461151
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Прочитано 162940 байт синхронно с 15461151
+13:05:46 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 162940 байт
+
+--- t=15.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=83, total_chunks=313, loaded=74
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:47 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 82: 
+13:05:47 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 75: 
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15624091, size=166526
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15624091
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Прочитано 166526 байт синхронно с 15624091
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 166526 байт
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15790617, size=170721
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15790617
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Прочитано 170721 байт синхронно с 15790617
+13:05:47 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 170721 байт
+
+--- t=16.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=85, total_chunks=313, loaded=75
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:48 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 77: 
+13:05:48 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=15961338, size=152627
+13:05:48 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 15961338
+13:05:48 | DEBUG    | file_io.win_sequential_reader | Прочитано 152627 байт синхронно с 15961338
+13:05:48 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 152627 байт
+
+--- t=17.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=86, total_chunks=313, loaded=76
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:49 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 79: 
+13:05:49 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=16113965, size=187113
+13:05:49 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 16113965
+13:05:49 | DEBUG    | file_io.win_sequential_reader | Прочитано 187113 байт синхронно с 16113965
+13:05:49 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 187113 байт
+
+--- t=18.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=87, total_chunks=313, loaded=77
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:50 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 86: 
+13:05:50 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 81: 
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=16301078, size=206700
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 16301078
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Прочитано 206700 байт синхронно с 16301078
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 206700 байт
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=16507778, size=191869
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 16507778
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Прочитано 191869 байт синхронно с 16507778
+13:05:50 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 191869 байт
+
+--- t=19.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=89, total_chunks=313, loaded=78
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:51 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 83: 
+13:05:51 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 88: 
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=16699647, size=188779
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 16699647
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Прочитано 188779 байт синхронно с 16699647
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 188779 байт
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=16888426, size=188054
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 16888426
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Прочитано 188054 байт синхронно с 16888426
+13:05:51 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 188054 байт
+
+--- t=20.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=91, total_chunks=313, loaded=79
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:52 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 84: 
+13:05:52 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 90: 
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=17076480, size=197525
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 17076480
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Прочитано 197525 байт синхронно с 17076480
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 197525 байт
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=17274005, size=157456
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 17274005
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Прочитано 157456 байт синхронно с 17274005
+13:05:52 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 157456 байт
+
+--- t=21.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=93, total_chunks=313, loaded=80
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:53 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 85: 
+13:05:53 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 92: 
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=17431461, size=192525
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 17431461
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Прочитано 192525 байт синхронно с 17431461
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 192525 байт
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=17623986, size=203033
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 17623986
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Прочитано 203033 байт синхронно с 17623986
+13:05:53 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 203033 байт
+
+--- t=22.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=95, total_chunks=313, loaded=81
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:54 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 87: 
+13:05:54 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 94: 
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=17827019, size=214173
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 17827019
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Прочитано 214173 байт синхронно с 17827019
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 214173 байт
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=18041192, size=300239
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 18041192
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Прочитано 300239 байт синхронно с 18041192
+13:05:54 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 300239 байт
+
+--- t=23.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=97, total_chunks=313, loaded=82
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:55 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 96: 
+13:05:55 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 89: 
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=18341431, size=309174
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 18341431
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Прочитано 309174 байт синхронно с 18341431
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 309174 байт
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=18650605, size=313410
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 18650605
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Прочитано 313410 байт синхронно с 18650605
+13:05:55 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 313410 байт
+
+--- t=24.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=99, total_chunks=313, loaded=83
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:56 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 91: 
+13:05:56 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=18964015, size=124505
+13:05:56 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 18964015
+13:05:56 | DEBUG    | file_io.win_sequential_reader | Прочитано 124505 байт синхронно с 18964015
+13:05:56 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 124505 байт
+
+--- t=25.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=100, total_chunks=313, loaded=84
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:57 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 99: 
+13:05:57 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 93: 
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=19088520, size=185505
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 19088520
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Прочитано 185505 байт синхронно с 19088520
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 185505 байт
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=19274025, size=278111
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 19274025
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Прочитано 278111 байт синхронно с 19274025
+13:05:57 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 278111 байт
+
+--- t=26.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=102, total_chunks=313, loaded=85
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:58 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 101: 
+13:05:58 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 95: 
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=19552136, size=288415
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 19552136
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Прочитано 288415 байт синхронно с 19552136
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 288415 байт
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=19840551, size=235237
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 19840551
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Прочитано 235237 байт синхронно с 19840551
+13:05:58 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 235237 байт
+
+--- t=27.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=104, total_chunks=313, loaded=86
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:05:59 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 97: 
+13:05:59 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=20075788, size=227731
+13:05:59 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 20075788
+13:05:59 | DEBUG    | file_io.win_sequential_reader | Прочитано 227731 байт синхронно с 20075788
+13:05:59 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 227731 байт
+
+--- t=28.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=105, total_chunks=313, loaded=87
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:06:00 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 104: 
+13:06:00 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 98: 
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=20303519, size=248957
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 20303519
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Прочитано 248957 байт синхронно с 20303519
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 248957 байт
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=20552476, size=228196
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 20552476
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Прочитано 228196 байт синхронно с 20552476
+13:06:00 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 228196 байт
+
+--- t=29.0s ---
+  playback.playing=False, paused=True
+  video_buffer.count=600, free_slots=0
+  scheduler: mode=NORMAL, current_chunk=107, total_chunks=313, loaded=88
+  stages alive: {'ReaderStage': True, 'DemuxerStage': True, 'VideoDecoderStage': True, 'AudioDecoderStage': True}
+  queues: raw=3, video_pkt=5, audio_pkt=0
+13:06:01 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 100: 
+13:06:01 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 106: 
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=20780672, size=260638
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 20780672
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Прочитано 260638 байт синхронно с 20780672
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 260638 байт
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Начало последовательного чтения: offset=21041310, size=238299
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Указатель файла установлен на 21041310
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Прочитано 238299 байт синхронно с 21041310
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Последовательное чтение завершено, прочитано 238299 байт
+
+Кадр не был получен в течение таймаута.
+13:06:01 | DEBUG    | file_io.win_sequential_reader | Закрытие HANDLE 1064
+13:06:01 | DEBUG    | decode.decoder | Некорректный размер NAL-юнита: size=19018541, pos=1451
+13:06:02 | ERROR    | pipeline.chunk_pipeline | Ошибка демукса чанка 102: 
+13:06:02 | ERROR    | pipeline.chunk_pipeline | Ошибка чтения чанка 108: 
+13:06:02 | DEBUG    | decode.decoder | Флешировано 6 кадров при закрытии декодера
+13:06:02 | DEBUG    | decode.decoder | Декодер закрыт
