@@ -2,12 +2,12 @@
 win_sequential_reader.py – низкоуровневое чтение файлов через Windows API
 с флагом FILE_FLAG_SEQUENTIAL_SCAN для оптимизации последовательного доступа.
 Поддерживает синхронный и асинхронный (overlapped) режимы.
-Добавлена поддержка отмены операции чтения через threading.Event.
+Версия production: подробное логирование, обработка всех ошибок.
+Исправление: все размеры и смещения явно приводятся к int для совместимости с ctypes.
 """
 
 import time
 import ctypes
-import threading
 from ctypes import wintypes
 from pathlib import Path
 import logging
@@ -31,6 +31,9 @@ INFINITE = 0xFFFFFFFF
 
 kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
 
+# ---------------------------------------------------------------------------
+# Объявления функций
+# ---------------------------------------------------------------------------
 CreateFileW = kernel32.CreateFileW
 CreateFileW.argtypes = [
     wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
@@ -95,13 +98,12 @@ class WinSequentialReader:
         path: путь к файлу
         read_timeout_ms: таймаут асинхронного чтения
         overlapped: использовать ли асинхронный ввод-вывод (по умолчанию False)
-    Поддержка отмены через set_cancel_event()/clear_cancel_event().
     """
 
     def __init__(
         self,
         path: Path,
-        rate_limit: int = 0,          # оставлен для обратной совместимости
+        rate_limit: int = 0,          # больше не используется; оставлен для обратной совместимости
         read_timeout_ms: int = 3000,
         overlapped: bool = False,
     ):
@@ -109,7 +111,6 @@ class WinSequentialReader:
         self._handle = None
         self._read_timeout_ms = read_timeout_ms
         self._overlapped = overlapped
-        self._cancel_event = threading.Event()  # событие отмены
         self._open()
 
     def _open(self):
@@ -135,14 +136,6 @@ class WinSequentialReader:
             raise OSError(f"Не удалось открыть файл {self._path}: код ошибки {err}")
         logger.debug(f"Файл успешно открыт, HANDLE={self._handle}")
 
-    def set_cancel_event(self, event: threading.Event):
-        """Устанавливает событие отмены. Чтение будет прервано при его активации."""
-        self._cancel_event = event
-
-    def clear_cancel_event(self):
-        """Сбрасывает событие отмены."""
-        self._cancel_event.clear()
-
     def _create_overlapped(self, offset: int) -> OVERLAPPED:
         """Создаёт структуру OVERLAPPED с событием для асинхронного чтения."""
         hEvent = CreateEventW(None, True, False, None)
@@ -160,6 +153,7 @@ class WinSequentialReader:
         if self._handle is None or self._handle == INVALID_HANDLE_VALUE:
             logger.error("Попытка чтения с невалидным HANDLE")
             return b''
+        # Явное приведение к int для безопасности ctypes
         size = int(size)
         buf = ctypes.create_string_buffer(size)
         bytes_read = wintypes.DWORD(0)
@@ -173,19 +167,15 @@ class WinSequentialReader:
                     if last_err != ERROR_IO_PENDING:
                         logger.error(f"Ошибка асинхронного чтения: код {last_err}")
                         return b''
-                    # Ожидание завершения с учётом отмены
-                    while True:
-                        if self._cancel_event.is_set():
-                            CancelIo(self._handle)
-                            return b''
-                        wait_result = WaitForSingleObject(ov.hEvent, 100)  # 100 мс
-                        if wait_result == WAIT_TIMEOUT:
-                            continue
-                        elif wait_result == WAIT_OBJECT_0:
-                            break
-                        else:
-                            logger.error(f"Ошибка ожидания события: {GetLastError()}")
-                            return b''
+                    # Ожидание завершения
+                    wait_result = WaitForSingleObject(ov.hEvent, self._read_timeout_ms)
+                    if wait_result == WAIT_TIMEOUT:
+                        logger.warning("Асинхронное чтение превысило таймаут, отмена")
+                        CancelIo(self._handle)
+                        return b''
+                    elif wait_result != WAIT_OBJECT_0:
+                        logger.error(f"Ошибка ожидания события: {GetLastError()}")
+                        return b''
                     if not GetOverlappedResult(self._handle, ctypes.byref(ov), ctypes.byref(bytes_read), False):
                         logger.error(f"Ошибка получения результата overlapped: {GetLastError()}")
                         return b''
@@ -197,9 +187,6 @@ class WinSequentialReader:
         else:
             # Синхронное чтение
             self.seek(offset)
-            # Проверка отмены перед чтением
-            if self._cancel_event.is_set():
-                return b''
             if not ReadFile(self._handle, buf, size, ctypes.byref(bytes_read), None):
                 err = GetLastError()
                 logger.error(f"Ошибка синхронного чтения: код {err}")
@@ -217,11 +204,6 @@ class WinSequentialReader:
         logger.debug(f"Указатель файла установлен на {offset}")
 
     def read_sequential(self, offset: int, size: int) -> bytes:
-        """
-        Читает size байт последовательно, разбивая на блоки.
-        Поддерживает отмену через cancel_event: если событие установлено,
-        чтение немедленно прекращается и возвращает уже прочитанные данные.
-        """
         chunk_size = 1024 * 1024
         data = bytearray()
         remaining = int(size)
@@ -229,16 +211,9 @@ class WinSequentialReader:
         max_retries = 3
 
         while remaining > 0:
-            # Проверка отмены в начале каждой итерации
-            if self._cancel_event.is_set():
-                logger.debug("Чтение прервано по cancel_event")
-                break
-
             to_read = int(min(chunk_size, remaining))
             block = b''
             for attempt in range(max_retries):
-                if self._cancel_event.is_set():
-                    break
                 try:
                     block = self.read(to_read, current_offset)
                     if block:
@@ -249,7 +224,7 @@ class WinSequentialReader:
                 except OSError as e:
                     logger.warning(f"Попытка {attempt+1}/{max_retries} чтения не удалась: {e}")
                     if attempt < max_retries - 1:
-                        # Переоткрываем файл
+                        # Принудительно переоткрываем файл
                         try:
                             self.close()
                         except Exception:

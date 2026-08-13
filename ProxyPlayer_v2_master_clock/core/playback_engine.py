@@ -182,7 +182,6 @@ class PlaybackEngine:
         local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
         self._pipeline.stop()
         self._pipeline.update_window(window)
-        self._pipeline._scheduler.set_normal_mode(local_chunk, window.total_chunks)
         self._pipeline.start(start_local_chunk=local_chunk)
         self._paused = True
         self.playing = False

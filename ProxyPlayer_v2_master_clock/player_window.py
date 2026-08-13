@@ -273,10 +273,6 @@ class PlayerWidget(QWidget):
             self.video_widget.hide_placeholder()
             self.video_widget.update()
 
-        # Отменяем предыдущий seek-поток (если есть)
-        if hasattr(self.player, '_seek_engine'):
-            self.player._seek_engine.cancel_current()
-
         self.player.seek_absolute(frame_idx, callback=on_seek_done)
 
     # ------------------------------------------------------------------
