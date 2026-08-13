@@ -3,11 +3,12 @@ chunk_pipeline.py – трёхэтапный конвейер загрузки �
 v2 – интеграция с MasterClock: AudioDecoderStage пушит аудио напрямую в MasterClock.
 MultiTrackAudioBuffer больше не используется.
 
-Исправления:
-- Условие фильтрации аудиодорожек заменено на track_id not in (2,3)
-- VideoDecoderStage._push_frame использует threading.Condition вместо активного ожидания
-- При остановке конвейера очищаются все внутренние очереди, чтобы старые пакеты
-  не блокировали возобновление после перемотки.
+Исправления (включая тройной буфер):
+- Фильтрация аудиодорожек: только дорожки 2 и 3.
+- VideoDecoderStage использует threading.Condition вместо активного ожидания.
+- При остановке конвейера очищаются все внутренние очереди.
+- Добавлен метод set_video_buffer для перенаправления вывода видео-декодера
+  в другой буфер без остановки стадий (для тройного буфера).
 """
 
 import time
@@ -202,7 +203,7 @@ class DemuxerStage(Stage):
             audio_chunk = window.audio_chunks[local_chunk]
             if audio_chunk:
                 for track_id, entries in audio_chunk.items():
-                    # Исправлено: разрешены только дорожки 2 и 3
+                    # Разрешены только дорожки 2 и 3
                     if track_id not in (2, 3):
                         continue
                     for entry in entries:
@@ -266,6 +267,15 @@ class VideoDecoderStage(Stage):
         """Вызывается, когда в буфере освобождается место."""
         with self._buffer_cond:
             self._buffer_cond.notify()
+
+    def set_buffer(self, new_buffer: FrameRingBuffer):
+        """
+        Заменяет целевой буфер без остановки стадии.
+        Безопасно вызывать из другого потока.
+        """
+        with self._buffer_cond:
+            self._buffer = new_buffer
+            self._buffer_cond.notify_all()
 
 
 class AudioDecoderStage(Stage):
@@ -348,6 +358,20 @@ class ChunkPipeline:
         with self._window_lock:
             self._window = new_window
             self._scheduler.set_normal_mode(0, new_window.total_chunks)
+
+    def set_video_buffer(self, new_buffer: FrameRingBuffer):
+        """
+        Перенаправляет вывод VideoDecoderStage в новый буфер.
+        Конвейер продолжает работать без остановки.
+        Также обновляет планировщик, чтобы он видел заполненность нового буфера.
+        """
+        self._video_buffer = new_buffer
+        # Обновляем планировщик
+        self._scheduler.set_buffer(new_buffer)
+        # Обновляем стадии (если они уже запущены)
+        for stage in self._stages:
+            if isinstance(stage, VideoDecoderStage):
+                stage.set_buffer(new_buffer)
 
     def start(self, start_local_chunk: int):
         self._scheduler.set_normal_mode(start_local_chunk, self.get_window_snapshot().total_chunks)

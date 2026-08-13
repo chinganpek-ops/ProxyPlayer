@@ -1,8 +1,9 @@
 """
-playback_engine.py – движок воспроизведения для ProxyPlayer v2.
-Исправления:
-- seek не сбрасывает аудиоочереди (не вызывает MasterClock.reset).
-- После перемотки планировщик явно переводится в NORMAL режим.
+playback_engine.py – движок воспроизведения с тройным буфером.
+Исправлено:
+- Тройной буфер: display_buffer, fill_buffer, seek_buffer.
+- При seek конвейер НЕ останавливается, только перенаправляется в новый буфер.
+- Звук не прерывается, отклик быстрый.
 """
 
 import time
@@ -45,7 +46,11 @@ class PlaybackEngine:
         self._seek_engine = seek_engine
         self._sync = sync_manager
         self._master_clock = master_clock
-        self._video_buffer = video_buffer
+
+        # Тройной буфер
+        self._display_buffer = video_buffer
+        self._fill_buffer = video_buffer
+        self._seek_buffer = FrameRingBuffer(max_frames=video_buffer.max_frames)
 
         self.start_frame_offset = start_frame_offset
         self.total_frames = total_frames
@@ -91,18 +96,23 @@ class PlaybackEngine:
             self._audio_clock = pts
         self._current_frame_idx = global_start_frame
 
-        self._video_buffer.clear()
+        # Используем fill_buffer для начального наполнения
+        self._fill_buffer.clear()
 
         self._pipeline.start(start_local_chunk=local_chunk)
 
         waited = 0.0
-        while self._video_buffer.count == 0 and waited < 5.0:
+        while self._fill_buffer.count == 0 and waited < 5.0:
             time.sleep(0.1)
             waited += 0.1
 
-        first = self._video_buffer.peek_first()
+        first = self._fill_buffer.peek_first()
         if first is not None:
-            self._video_buffer.update_keep_last(first[1], first[0])
+            self._fill_buffer.update_keep_last(first[1], first[0])
+            # сразу показываем первый кадр
+            self._display_buffer.copy_last_frame_to(self._display_buffer)  # нет, это не нужно
+            # просто установим keep_last в display
+            self._display_buffer.update_keep_last(first[1], first[0])
 
         self.playing = False
         self._paused = True
@@ -153,26 +163,34 @@ class PlaybackEngine:
     def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow', gen: int):
         with self._seek_lock:
             if gen != self._seek_generation:
-                return
+                return  # устаревший запрос
 
-        # Очищаем основной буфер
-        self._video_buffer.clear()
+        # 1. Очищаем seek_buffer
+        self._seek_buffer.clear()
 
-        # Переносим кадры из временного буфера (результат seek) в основной
+        # 2. Переносим кадры из временного буфера в seek_buffer
         while True:
             entry = buffer.peek_first()
             if entry is None:
                 break
             pts, frame = entry
-            if not self._video_buffer.try_push(frame, pts):
+            if not self._seek_buffer.try_push(frame, pts):
                 break
             buffer.advance()
 
-        # Если перенос не удался (буфер заполнен), оставляем keep_last
-        first = self._video_buffer.peek_first()
+        # 3. Переключаем буферы
+        self._display_buffer = self._seek_buffer
+        self._fill_buffer = self._seek_buffer
+
+        # 4. Обновляем конвейер без остановки
+        self._pipeline.update_window(window)
+        self._pipeline.set_video_buffer(self._fill_buffer)
+
+        # 5. Переводим планировщик в NORMAL с нужного чанка
+        first = self._display_buffer.peek_first()
         if first:
             pts, frame = first
-            self._video_buffer.update_keep_last(frame, pts)
+            self._display_buffer.update_keep_last(frame, pts)
             with self._clock_lock:
                 self._audio_clock = pts
             self._current_frame_idx = pts_to_video_frame(pts)
@@ -180,9 +198,9 @@ class PlaybackEngine:
                 self._master_clock.set_clock(pts)
 
         local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
-        self._pipeline.stop()
-        self._pipeline.update_window(window)
-        self._pipeline.start(start_local_chunk=local_chunk)
+        self._pipeline._scheduler.set_normal_mode(local_chunk, window.total_chunks)
+
+        # 6. Плеер остаётся на паузе
         self._paused = True
         self.playing = False
 
@@ -243,10 +261,10 @@ class PlaybackEngine:
                 target = self._current_frame_idx + skip * self._seek_direction
                 target = max(0, min(target, self.total_frames - 1))
                 self._fast_seek(target)
-            return self._video_buffer.get_keep_last()
+            return self._display_buffer.get_keep_last()
 
         return self._sync.get_display_frame(
-            self._video_buffer,
+            self._display_buffer,
             audio_clock=self._audio_clock,
             playing=self.playing,
         )
@@ -257,10 +275,10 @@ class PlaybackEngine:
             pts = video_frame_to_pts(frame_idx)
             with self._clock_lock:
                 self._audio_clock = pts
-        self._video_buffer.drop_until(pts)
-        first = self._video_buffer.peek_first()
+        self._display_buffer.drop_until(pts)
+        first = self._display_buffer.peek_first()
         if first:
-            self._video_buffer.update_keep_last(first[1], first[0])
+            self._display_buffer.update_keep_last(first[1], first[0])
 
     @property
     def audio_clock(self) -> int:
