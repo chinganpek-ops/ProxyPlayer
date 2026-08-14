@@ -1,9 +1,9 @@
 """
 playback_engine.py – движок воспроизведения с тройным буфером.
-Исправлено:
-- Тройной буфер: display_buffer, fill_buffer, seek_buffer.
-- При seek конвейер НЕ останавливается, только перенаправляется в новый буфер.
-- Звук не прерывается, отклик быстрый.
+Исправления:
+- После seek display и fill указывают на новый буфер с декодированными кадрами.
+- Конвейер не останавливается, звук не прерывается.
+- Первая перемотка срабатывает сразу.
 """
 
 import time
@@ -50,7 +50,7 @@ class PlaybackEngine:
         # Тройной буфер
         self._display_buffer = video_buffer
         self._fill_buffer = video_buffer
-        self._seek_buffer = FrameRingBuffer(max_frames=video_buffer.max_frames)
+        self._free_buffer = FrameRingBuffer(max_frames=video_buffer.max_frames)
 
         self.start_frame_offset = start_frame_offset
         self.total_frames = total_frames
@@ -62,7 +62,6 @@ class PlaybackEngine:
         self._clock_lock = threading.Lock()
         self._current_frame_idx = 0
 
-        # JKL
         self._seek_speed = 1.0
         self._seek_speed_index = -1
         self._seek_direction = 0
@@ -71,16 +70,12 @@ class PlaybackEngine:
         self._normal_playing_state = False
 
         self._playback_started = False
-
-        # Защита от повторного seek и поколение запросов
         self._seek_generation = 0
         self._seek_lock = threading.Lock()
 
-    # ------------------------------------------------------------------
     def set_master_clock(self, master_clock: MasterClock):
         self._master_clock = master_clock
 
-    # ------------------------------------------------------------------
     def start_playback(self, global_start_frame: int, window_start_frame: int):
         if self._playback_started:
             logger.warning("start_playback вызван повторно, игнорируем")
@@ -96,8 +91,9 @@ class PlaybackEngine:
             self._audio_clock = pts
         self._current_frame_idx = global_start_frame
 
-        # Используем fill_buffer для начального наполнения
+        self._display_buffer = self._fill_buffer
         self._fill_buffer.clear()
+        self._free_buffer.clear()
 
         self._pipeline.start(start_local_chunk=local_chunk)
 
@@ -108,10 +104,6 @@ class PlaybackEngine:
 
         first = self._fill_buffer.peek_first()
         if first is not None:
-            self._fill_buffer.update_keep_last(first[1], first[0])
-            # сразу показываем первый кадр
-            self._display_buffer.copy_last_frame_to(self._display_buffer)  # нет, это не нужно
-            # просто установим keep_last в display
             self._display_buffer.update_keep_last(first[1], first[0])
 
         self.playing = False
@@ -163,30 +155,34 @@ class PlaybackEngine:
     def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow', gen: int):
         with self._seek_lock:
             if gen != self._seek_generation:
-                return  # устаревший запрос
+                return
 
-        # 1. Очищаем seek_buffer
-        self._seek_buffer.clear()
+        # 1. Освобождаем free_buffer (он будет новым display/fill)
+        self._free_buffer.clear()
 
-        # 2. Переносим кадры из временного буфера в seek_buffer
+        # 2. Переносим кадры из временного буфера в free_buffer
         while True:
             entry = buffer.peek_first()
             if entry is None:
                 break
             pts, frame = entry
-            if not self._seek_buffer.try_push(frame, pts):
+            if not self._free_buffer.try_push(frame, pts):
                 break
             buffer.advance()
 
-        # 3. Переключаем буферы
-        self._display_buffer = self._seek_buffer
-        self._fill_buffer = self._seek_buffer
+        # 3. Переключаем буферы:
+        #    старый display уходит во free, free становится новым display и fill.
+        old_display = self._display_buffer
 
-        # 4. Обновляем конвейер без остановки
+        self._display_buffer = self._free_buffer
+        self._fill_buffer = self._free_buffer
+        self._free_buffer = old_display
+
+        # 4. Обновляем конвейер (без остановки)
         self._pipeline.update_window(window)
         self._pipeline.set_video_buffer(self._fill_buffer)
 
-        # 5. Переводим планировщик в NORMAL с нужного чанка
+        # 5. Обновляем позицию по первому кадру нового буфера
         first = self._display_buffer.peek_first()
         if first:
             pts, frame = first
@@ -200,54 +196,21 @@ class PlaybackEngine:
         local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
         self._pipeline._scheduler.set_normal_mode(local_chunk, window.total_chunks)
 
-        # 6. Плеер остаётся на паузе
         self._paused = True
         self.playing = False
-
-    # ------------------------------------------------------------------
-    # JKL
-    # ------------------------------------------------------------------
-    def set_speed(self, direction: int):
-        if self.total_frames == 0:
-            return
-        if self._seek_direction != direction:
-            self._seek_speed_index = 0
-            self._seek_direction = direction
-        else:
-            self._seek_speed_index = min(self._seek_speed_index + 1, 2)
-        self._seek_speed = SEEK_SPEEDS[self._seek_speed_index]
-        if self._seek_speed_index == 0:
-            self._normal_playing_state = self.playing
-            if self._master_clock:
-                self._master_clock.set_muted(True)
-        self._seek_accumulator = 0.0
-        self._last_seek_time = time.monotonic()
-
-    def reset_speed(self):
-        if self._seek_speed == 1.0 and self._seek_direction == 0:
-            return
-        self._seek_speed = 1.0
-        self._seek_speed_index = -1
-        self._seek_direction = 0
-        self._seek_accumulator = 0.0
-        if self._master_clock:
-            self._master_clock.set_muted(False)
-        if self._normal_playing_state and not self.playing:
-            self.resume()
-        elif not self._normal_playing_state and self.playing:
-            self.pause()
-
-    def get_speed_display(self) -> str:
-        if self._seek_direction == 0:
-            return "▶ x1"
-        direction = "<<" if self._seek_direction < 0 else ">>"
-        return f"{direction} x{self._seek_speed:.0f}"
 
     # ------------------------------------------------------------------
     def get_display_frame(self) -> Optional[np.ndarray]:
         if self._master_clock:
             with self._clock_lock:
                 self._audio_clock = self._master_clock.get_audio_clock()
+
+        # Не переключаем буферы автоматически – они уже переключены в _on_seek_complete.
+        # Если display пуст, но fill не пуст, переключаемся (страховка)
+        if self._display_buffer.count == 0 and self._fill_buffer.count > 0:
+            self._display_buffer, self._fill_buffer, self._free_buffer = (
+                self._fill_buffer, self._free_buffer, self._display_buffer
+            )
 
         if self._seek_direction != 0 and self._seek_speed > 1.0:
             now = time.monotonic()
@@ -285,7 +248,6 @@ class PlaybackEngine:
         with self._clock_lock:
             return self._audio_clock
 
-    # ------------------------------------------------------------------
     def get_local_timecode_str(self) -> str:
         idx = pts_to_video_frame(self._audio_clock)
         total_seconds = idx / self.fps
