@@ -1,14 +1,18 @@
 """
 stream_scheduler.py – приоритетный планировщик загрузки чанков (локальные индексы).
-Версия с максимальным логированием для диагностики.
+Добавлено управление заполненностью буфера:
+- Загрузка возобновляется при заполнении <= 60%.
+- Останавливается при заполнении >= 95%.
+- В NORMAL режиме скорость загрузки ограничена 1.15x скорости потребления.
 """
 
 import threading
 import logging
+import time
 from enum import Enum, auto
 from typing import Optional, List, Set
 
-from config.timebase import FRAMES_PER_CHUNK
+from config.timebase import FRAMES_PER_CHUNK, SAMPLES_PER_CHUNK, AUDIO_SAMPLE_RATE
 from pipeline.adaptive_chunk import AdaptiveChunkStrategy
 
 logger = logging.getLogger(__name__)
@@ -40,11 +44,27 @@ class StreamScheduler:
         self._lock = threading.Lock()
         self._video_buffer = None
 
+        # --- Управление загрузкой ---
+        self._buffer_high_watermark = 0.95  # 95% заполненности
+        self._buffer_low_watermark = 0.60   # 60% заполненности
+        self._loading_allowed = True
+        self._last_chunk_ts = 0.0           # время выдачи последнего чанка
+        self._chunk_duration = SAMPLES_PER_CHUNK / AUDIO_SAMPLE_RATE  # 0.48 сек при 25 fps
+        self._speed_factor = 1.15           # загрузка со скоростью 1.15x потребления
+
         logger.info("StreamScheduler создан")
 
     def set_buffer(self, video_buffer):
         self._video_buffer = video_buffer
-        logger.info("StreamScheduler: видеобуфер установлен")
+        # Пересчитываем абсолютные пороги на основе max_frames буфера
+        if video_buffer:
+            self._high_threshold = int(video_buffer.max_frames * self._buffer_high_watermark)
+            self._low_threshold = int(video_buffer.max_frames * self._buffer_low_watermark)
+        else:
+            self._high_threshold = 0
+            self._low_threshold = 0
+        logger.info("StreamScheduler: видеобуфер установлен, пороги: low=%d, high=%d",
+                    self._low_threshold, self._high_threshold)
 
     def set_normal_mode(self, current_local_chunk: int, total_local_chunks: int):
         with self._lock:
@@ -52,6 +72,8 @@ class StreamScheduler:
             self._current_chunk = current_local_chunk
             self._total_chunks = total_local_chunks
             self._loaded_chunks.clear()
+            self._loading_allowed = True   # разрешаем загрузку при переходе в NORMAL
+            self._last_chunk_ts = 0.0
             logger.info("StreamScheduler: NORMAL mode, current=%d, total=%d",
                         self._current_chunk, self._total_chunks)
 
@@ -87,15 +109,40 @@ class StreamScheduler:
 
     # ------------------------------------------------------------------
     def get_next_chunk(self) -> Optional[int]:
-        """Возвращает локальный индекс следующего чанка для загрузки."""
+        """Возвращает локальный индекс следующего чанка с учётом гистерезиса и скорости."""
         with self._lock:
-            if self._video_buffer is not None and self._video_buffer.free_slots == 0:
-                logger.debug("[Scheduler] free_slots==0, returning None")
-                return None
+            # 1. Проверка заполненности буфера (общая для всех режимов)
+            if self._video_buffer is not None:
+                count = self._video_buffer.count
+                if count >= self._high_threshold:
+                    self._loading_allowed = False
+                elif count <= self._low_threshold:
+                    self._loading_allowed = True
+
+                if not self._loading_allowed:
+                    logger.debug("[Scheduler] Буфер заполнен (%d/%d), загрузка остановлена",
+                                 count, self._video_buffer.max_frames)
+                    return None
+            else:
+                # Если буфер не установлен, продолжаем без ограничений
+                pass
+
+            # 2. Ограничение скорости только для NORMAL режима
+            if self._mode == PlaybackMode.NORMAL and self._last_chunk_ts > 0:
+                elapsed = time.monotonic() - self._last_chunk_ts
+                min_interval = self._chunk_duration / self._speed_factor
+                if elapsed < min_interval:
+                    # Ещё рано выдавать следующий чанк
+                    return None
+
+            # 3. Выбор чанка (приоритет/обычный/перемотка)
             chunk = self._get_next_chunk_locked()
-            logger.debug("[Scheduler] mode=%s, current=%d, total=%d, loaded=%d, returned=%s",
-                         self._mode, self._current_chunk, self._total_chunks,
-                         len(self._loaded_chunks), chunk)
+
+            # 4. Если чанк выбран, фиксируем время
+            if chunk is not None:
+                self._last_chunk_ts = time.monotonic()
+                logger.debug("[Scheduler] mode=%s, returned=%s", self._mode, chunk)
+
             return chunk
 
     def _get_next_chunk_locked(self) -> Optional[int]:
@@ -182,6 +229,8 @@ class StreamScheduler:
             self._mode = PlaybackMode.NORMAL
             self._current_chunk = 0
             self._total_chunks = 0
+            self._loading_allowed = True
+            self._last_chunk_ts = 0.0
             logger.info("[Scheduler] reset")
 
     @property

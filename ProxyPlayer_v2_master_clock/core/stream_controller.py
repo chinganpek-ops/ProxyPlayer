@@ -2,7 +2,11 @@
 stream_controller.py – фасад для всех компонентов ProxyPlayer v2.
 Использует MasterClock вместо AudioOutput и MultiTrackAudioBuffer.
 AudioClock и синхронизация идут от звуковой карты.
-Исправление: seek_absolute принимает callback для уведомления GUI о завершении seek.
+Исправления:
+- Ридеры разделены: конвейер использует собственный WinSequentialReader внутри ReaderStage,
+  а SeekEngine теперь создаёт отдельный ридер на каждый запрос (внутри).
+- seek_absolute принимает callback для уведомления GUI о завершении seek.
+- Конвейер не останавливается при seek (переключение буферов и окна без stop/start).
 """
 
 import time
@@ -180,9 +184,8 @@ class StreamController:
                 self.buffer_main, None  # master_clock будет передан позже
             )
 
-            # 8. Создаём Reader и SeekEngine
-            reader = WinSequentialReader(self.mp4_path, 0, False)
-            self._seek_engine = SeekEngine(self._lazy_index, self.decoder, reader)
+            # 8. Создаём SeekEngine. Ридер не нужен, так как SeekEngine создаёт свой на каждый запрос.
+            self._seek_engine = SeekEngine(self._lazy_index, self.decoder, None)
 
             # 9. Создаём PlaybackEngine (MasterClock будет передан позже)
             self._playback = PlaybackEngine(

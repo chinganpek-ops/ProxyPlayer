@@ -1,14 +1,17 @@
 """
 seek_engine.py – асинхронный seek с отменой для ProxyPlayer v2.
-Версия с поддержкой отмены чтения через cancel_event.
-Исправления:
-- Корректный расчёт диапазона чтения.
-- Передача события отмены в WinSequentialReader.
-- Обработка ошибок декодирования с сохранением причины.
+Оптимизирован для стабильной работы с одним воркер-потоком.
+
+Изменения:
+- Один воркер-поток с очередью команд (никаких параллельных seek).
+- Новый запрос отменяет предыдущий, но не создаёт новый поток.
+- Каждый запрос использует свой WinSequentialReader (изолированные чтения).
+- Поддержка поколений: старые колбэки игнорируются.
 """
 
 import threading
 import logging
+import queue
 from typing import Optional, Callable
 
 import numpy as np
@@ -22,7 +25,7 @@ from index.moov_builder import _abs_offset
 
 logger = logging.getLogger(__name__)
 
-LOOKAHEAD_FRAMES = 12  # сколько кадров декодировать после целевого
+LOOKAHEAD_FRAMES = 12
 
 
 class SeekRequest:
@@ -36,7 +39,6 @@ class SeekRequest:
         self._error: Optional[str] = None
 
     def cancel(self):
-        """Отменяет текущий seek."""
         self._cancelled.set()
 
     @property
@@ -45,7 +47,6 @@ class SeekRequest:
 
     @property
     def cancel_event(self) -> threading.Event:
-        """Событие отмены, которое можно передать в reader для прерывания чтения."""
         return self._cancelled
 
     def _mark_done(self, success: bool, error: str = None):
@@ -54,7 +55,6 @@ class SeekRequest:
         self._done.set()
 
     def wait(self, timeout: float = None) -> bool:
-        """Блокирует поток до завершения seek. Возвращает True, если seek успешен."""
         self._done.wait(timeout)
         return self._success
 
@@ -65,8 +65,8 @@ class SeekRequest:
 
 class SeekEngine:
     """
-    Асинхронный движок перемотки. Выполняет поиск ближайшего IDR,
-    декодирует кадры и заполняет буфер. Поддерживает отмену.
+    Асинхронный движок перемотки. Один воркер-поток обрабатывает все запросы.
+    Новый seek отменяет текущий и сразу становится в очередь.
     """
 
     def __init__(
@@ -77,10 +77,48 @@ class SeekEngine:
     ):
         self._lazy_index = lazy_index
         self._decoder = decoder
-        self._reader = reader
+        self._base_reader = reader  # базовый ридер, для совместимости (не используется напрямую)
         self._current_request: Optional[SeekRequest] = None
         self._generation = 0
         self._lock = threading.Lock()
+
+        # Очередь команд для воркера
+        self._command_queue = queue.Queue()
+
+        # Запускаем воркер
+        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="SeekWorker")
+        self._worker_thread.start()
+
+    def _worker_loop(self):
+        """Основной цикл воркера: берёт команды из очереди и выполняет их."""
+        while True:
+            try:
+                command, args, kwargs = self._command_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if command == "seek":
+                self._process_seek(*args, **kwargs)
+            elif command == "stop":
+                break
+
+    def _process_seek(self, request: SeekRequest, frame_idx: int, on_complete, on_error):
+        """Выполняет seek-запрос внутри воркера."""
+        try:
+            buffer = self._seek_sync_internal(frame_idx, request)
+            if request.is_cancelled:
+                return
+            with self._lock:
+                if request.generation != self._generation:
+                    return  # устаревший запрос
+            request._mark_done(True)
+            if on_complete:
+                on_complete(buffer)
+        except Exception as e:
+            logger.exception("Seek error")
+            request._mark_done(False, str(e))
+            if on_error:
+                on_error(str(e))
 
     def seek_async(
         self,
@@ -89,75 +127,52 @@ class SeekEngine:
         on_error: Callable[[str], None] = None,
     ) -> SeekRequest:
         """
-        Запускает асинхронный seek к кадру frame_idx.
-        Предыдущий запрос немедленно отменяется (через cancel_event),
-        но поток не ожидается, чтобы не блокировать интерфейс.
+        Ставит запрос в очередь. Предыдущий отменяется.
+        Возвращает SeekRequest для отслеживания/отмены.
         """
         with self._lock:
             self._generation += 1
             gen = self._generation
-            # Отменяем предыдущий запрос, если он есть
             if self._current_request and not self._current_request._done.is_set():
                 self._current_request.cancel()
             request = SeekRequest(gen)
             self._current_request = request
 
-        def _run():
-            try:
-                buffer = self._seek_sync(frame_idx, request)
-                if request.is_cancelled:
-                    return
-                with self._lock:
-                    if gen != self._generation:
-                        return  # устаревший запрос
-                request._mark_done(True)
-                on_complete(buffer)
-            except Exception as e:
-                logger.exception("Seek error")
-                request._mark_done(False, str(e))
-                if on_error:
-                    on_error(str(e))
+        # Отправляем команду воркеру
+        self._command_queue.put(("seek", (request, frame_idx, on_complete, on_error), {}))
 
-        thread = threading.Thread(target=_run, daemon=True)
-        thread.start()
         return request
 
     def seek_sync(self, frame_idx: int) -> FrameRingBuffer:
-        """Синхронный seek (блокирует поток). Используется для тестов и совместимости."""
+        """Синхронный seek (блокирует поток). Для тестов и совместимости."""
         request = SeekRequest(0)
-        return self._seek_sync(frame_idx, request)
+        return self._seek_sync_internal(frame_idx, request)
 
     def cancel_current(self):
         """Отменяет текущий выполняющийся seek."""
         with self._lock:
             if self._current_request and not self._current_request._done.is_set():
                 self._current_request.cancel()
-                self._current_request = None
 
-    # ------------------------------------------------------------------
-    def _seek_sync(self, frame_idx: int, request: SeekRequest) -> FrameRingBuffer:
+    def _seek_sync_internal(self, frame_idx: int, request: SeekRequest) -> FrameRingBuffer:
         """Основная логика seek. Может быть отменена через request."""
         window = self._lazy_index.open_window(frame_idx)
         if window is None or len(window.video_records) == 0:
             raise RuntimeError("Не удалось открыть окно индекса")
 
-        # Ищем ближайший IDR в окне
         idr_indices = window.idr_frames
         if len(idr_indices) == 0:
             raise RuntimeError("В окне не найдены IDR-кадры")
 
-        # Переводим глобальный frame_idx в локальный индекс внутри окна
         local_target = frame_idx - window.window_start_frame
         pos = np.searchsorted(idr_indices, local_target, side='right') - 1
         if pos < 0:
             pos = 0
         local_idr = idr_indices[pos]
 
-        # Декодируем от IDR до целевого кадра + запас
         end_local = min(len(window.video_records) - 1,
                         max(local_idr + LOOKAHEAD_FRAMES, local_target))
 
-        # Определяем границы чтения в файле
         first_rec = window.video_records[local_idr]
         start_offset = int(_abs_offset(first_rec))
 
@@ -171,25 +186,24 @@ class SeekEngine:
         if read_size <= 0:
             raise RuntimeError("Некорректный размер данных для seek")
 
-        # Проверка отмены перед чтением
         if request.is_cancelled:
             raise RuntimeError("Seek отменён")
 
-        # Передаём событие отмены в reader
-        self._reader.set_cancel_event(request.cancel_event)
+        # Создаём отдельный ридер для этого seek
+        reader = WinSequentialReader(self._lazy_index.mp4_path, rate_limit=0, overlapped=False)
         try:
-            raw_data = self._reader.read_sequential(start_offset, read_size)
+            reader.set_cancel_event(request.cancel_event)
+            raw_data = reader.read_sequential(start_offset, read_size)
         finally:
-            self._reader.clear_cancel_event()
+            reader.set_cancel_event(threading.Event())  # сбрасываем
+            reader.close()
 
         if request.is_cancelled:
-            # Операция отменена во время чтения, возвращаем пустой буфер
             return FrameRingBuffer(max_frames=2)
 
         if not raw_data:
             return FrameRingBuffer(max_frames=2)
 
-        # Декодируем кадры
         buffer = FrameRingBuffer(max_frames=300)
         first_decode_error = None
 
@@ -216,7 +230,6 @@ class SeekEngine:
             except Exception as e:
                 if first_decode_error is None:
                     first_decode_error = e
-                logger.debug(f"Ошибка фильтрации AVCC для кадра {i}: {e}")
                 continue
             if not filtered:
                 continue
@@ -226,7 +239,6 @@ class SeekEngine:
                 for frame in frames:
                     pts = video_frame_to_pts(window.window_start_frame + i)
                     if not buffer.try_push(frame, pts):
-                        logger.debug(f"Буфер заполнен на кадре {i}, прекращаем декодирование")
                         request.cancel()
                         break
                 if request.is_cancelled:
@@ -234,7 +246,6 @@ class SeekEngine:
             except Exception as e:
                 if first_decode_error is None:
                     first_decode_error = e
-                logger.debug(f"Ошибка декодирования кадра {i}: {e}")
                 continue
 
         if buffer.count == 0:
@@ -244,3 +255,8 @@ class SeekEngine:
             raise RuntimeError(error_msg)
 
         return buffer
+
+    def close(self):
+        """Останавливает воркер и освобождает ресурсы."""
+        self._command_queue.put(("stop", (), {}))
+        self._worker_thread.join(timeout=2.0)
