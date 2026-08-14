@@ -50,7 +50,7 @@ class StreamScheduler:
         self._loading_allowed = True
         self._last_chunk_ts = 0.0           # время выдачи последнего чанка
         self._chunk_duration = SAMPLES_PER_CHUNK / AUDIO_SAMPLE_RATE  # 0.48 сек при 25 fps
-        self._speed_factor = 1.15           # загрузка со скоростью 1.15x потребления
+        self._speed_factor = 1.25           # загрузка со скоростью 1.15x потребления
 
         logger.info("StreamScheduler создан")
 

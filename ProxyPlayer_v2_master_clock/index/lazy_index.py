@@ -124,6 +124,7 @@ class LazyIndex:
 
             total_frames = len(self._video_records_full)
             start_frame = max(0, center_frame - half_frames)
+            start_frame = (start_frame // FRAMES_PER_CHUNK) * FRAMES_PER_CHUNK
             end_frame = min(total_frames, center_frame + half_frames)
 
             # Гарантируем минимальный размер окна

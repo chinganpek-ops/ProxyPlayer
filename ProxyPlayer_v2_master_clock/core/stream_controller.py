@@ -246,7 +246,13 @@ class StreamController:
 
             # --- Создаём MasterClock в ГЛАВНОМ ПОТОКЕ ---
             if self.master_clock is None:
-                self.master_clock = MasterClock(sample_rate=48000, buffer_size=1024)
+                # Синхронизируем ёмкость аудио буфера с видео буфером
+                max_audio_samples = self.buffer_size * SAMPLES_PER_VIDEO_FRAME
+                self.master_clock = MasterClock(
+                    sample_rate=48000,
+                    buffer_size=1024,
+                    max_audio_queue_samples=max_audio_samples
+                )
                 self.master_clock.audio_delay = self.audio_delay_samples / 48000.0
                 self.master_clock.set_track_enabled(2, 2 in self.active_tracks)
                 self.master_clock.set_track_enabled(3, 3 in self.active_tracks)

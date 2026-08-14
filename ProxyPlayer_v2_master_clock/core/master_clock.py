@@ -3,8 +3,11 @@ master_clock.py – единый тактовый генератор на осн
 Одна звуковая карта = Master Clock + вывод аудио.
 Поддерживает две моно-дорожки (2 → левый канал, 3 → правый канал).
 Управление: включение/отключение дорожек, общий mute.
-Исправление: независимое микширование левого и правого каналов,
-корректный подсчёт underruns.
+Добавлено управление заполненностью аудиоочередей:
+- max_audio_queue_samples ограничивает суммарный размер буферов.
+- get_audio_queue_samples() возвращает текущее количество сэмплов в очередях.
+- flush_audio() очищает очереди без сброса тактового счётчика (для seek).
+Логирование аудио-событий в audio_monitor.log через AudioMonitor.
 """
 
 import threading
@@ -15,17 +18,24 @@ import sounddevice as sd
 
 logger = logging.getLogger(__name__)
 
+# --- Логгер для мониторинга аудио ---
+audio_monitor_logger = logging.getLogger("AudioMonitor")
+audio_monitor_logger.setLevel(logging.DEBUG)
+if not audio_monitor_logger.handlers:
+    _audio_mon_handler = logging.FileHandler("audio_monitor.log", encoding="utf-8")
+    _audio_mon_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    audio_monitor_logger.addHandler(_audio_mon_handler)
+audio_monitor_logger.propagate = False
+
 
 class MasterClock:
-    """
-    Единый источник времени и аудиовыхода.
-    Ведёт подсчёт семплов через callback звуковой карты.
-    Раздельно микширует дорожку 2 (левый канал) и дорожку 3 (правый канал).
-    """
-
-    def __init__(self, sample_rate: int = 48000, buffer_size: int = 1024):
+    def __init__(self, sample_rate: int = 48000, buffer_size: int = 1024,
+                 max_audio_queue_samples: int = 48000):
         self.sample_rate = sample_rate
         self.buffer_size = buffer_size
+
+        # Максимальное количество аудиосэмплов в очередях (гистерезис)
+        self.max_audio_queue_samples = max_audio_queue_samples
 
         # Счётчик воспроизведённых семплов (монотонный)
         self._samples_played = 0
@@ -81,6 +91,7 @@ class MasterClock:
     def reset(self):
         """Сбрасывает счётчик и очищает очереди (при остановке/перемотке)."""
         self.set_clock(0)
+        self.flush_audio()
         self._underruns = 0
         logger.debug("MasterClock сброшен")
 
@@ -114,7 +125,7 @@ class MasterClock:
         return False
 
     # ------------------------------------------------------------------
-    # Аудиовыход
+    # Очереди аудио
     # ------------------------------------------------------------------
     def push_audio(self, track_id: int, samples: np.ndarray):
         """
@@ -131,10 +142,31 @@ class MasterClock:
             self._max_queue_len = max(self._max_queue_len,
                                       len(self._queue2) + len(self._queue3))
 
+        # Логирование в аудио-монитор
+        audio_monitor_logger.debug(f"AUDIO_PUSH track={track_id} samples={len(samples)}")
+
     def get_queue_size(self) -> int:
-        """Возвращает суммарный размер аудиоочередей."""
+        """Возвращает количество элементов (блоков) в очередях."""
         with self._queue_lock:
             return len(self._queue2) + len(self._queue3)
+
+    def get_audio_queue_samples(self) -> int:
+        """Возвращает суммарное количество аудиосэмплов во всех очередях."""
+        with self._queue_lock:
+            total = sum(len(chunk) for chunk in self._queue2)
+            total += sum(len(chunk) for chunk in self._queue3)
+            return total
+
+    def flush_audio(self):
+        """
+        Очищает аудиоочереди, не меняя счётчик воспроизведённых семплов.
+        Используется после seek для удаления старых аудиоданных.
+        """
+        with self._queue_lock:
+            self._queue2.clear()
+            self._queue3.clear()
+        audio_monitor_logger.info("AUDIO_FLUSH")
+        logger.debug("MasterClock: аудиоочереди очищены (flush_audio)")
 
     # ------------------------------------------------------------------
     # Callback звуковой карты
@@ -150,33 +182,29 @@ class MasterClock:
         if self._muted:
             return
 
-        # Микшируем каждый канал независимо
         if self._track2_enabled:
             self._mix_channel(outdata, 0, self._queue2, frames)
         if self._track3_enabled:
             self._mix_channel(outdata, 1, self._queue3, frames)
 
     def _mix_channel(self, outdata, channel_idx, queue, frames):
-        """
-        Заполняет канал channel_idx данными из очереди.
-        Неиспользованный остаток возвращается в начало очереди.
-        """
+        """Заполняет канал channel_idx данными из очереди."""
         written = 0
         while written < frames:
             with self._queue_lock:
                 if queue:
                     chunk = queue.popleft()
                 else:
-                    break  # данных больше нет, остальное останется тишиной
+                    break
             take = min(len(chunk), frames - written)
             outdata[written:written+take, channel_idx] = chunk[:take]
             if take < len(chunk):
-                # Возвращаем оставшуюся часть обратно в начало очереди
                 with self._queue_lock:
                     queue.appendleft(chunk[take:])
             written += take
         if written < frames:
             self._underruns += 1
+            audio_monitor_logger.debug(f"AUDIO_UNDERRUN channel={channel_idx} missing={frames - written}")
         return written
 
     # ------------------------------------------------------------------
@@ -189,7 +217,7 @@ class MasterClock:
         try:
             self._stream = sd.OutputStream(
                 samplerate=self.sample_rate,
-                channels=2,          # стерео
+                channels=2,
                 callback=self._callback,
                 blocksize=self.buffer_size,
                 latency='low',
@@ -217,9 +245,7 @@ class MasterClock:
     def close(self):
         """Останавливает и очищает ресурсы."""
         self.stop()
-        with self._queue_lock:
-            self._queue2.clear()
-            self._queue3.clear()
+        self.flush_audio()
         logger.info("MasterClock закрыт")
 
     # ------------------------------------------------------------------
@@ -229,6 +255,8 @@ class MasterClock:
         return {
             'samples_played': self.samples_played,
             'queue_size': self.get_queue_size(),
+            'audio_queue_samples': self.get_audio_queue_samples(),
+            'max_audio_queue_samples': self.max_audio_queue_samples,
             'max_queue_len': self._max_queue_len,
             'underruns': self._underruns,
             'audio_delay': self.audio_delay,

@@ -3,18 +3,13 @@ chunk_pipeline.py – трёхэтапный конвейер загрузки �
 v2 – интеграция с MasterClock: AudioDecoderStage пушит аудио напрямую в MasterClock.
 MultiTrackAudioBuffer больше не используется.
 
-Исправления (включая тройной буфер, фильтрацию окон и эталонный PTS):
-- Фильтрация аудиодорожек: только дорожки 2 и 3.
-- VideoDecoderStage использует threading.Condition вместо активного ожидания.
-- При остановке конвейера очищаются все внутренние очереди.
-- Добавлен метод set_video_buffer для перенаправления вывода видео-декодера
-  в другой буфер без остановки стадий (для тройного буфера).
-- Добавлен метод flush() для очистки очередей при переключении буфера.
-- VideoDecoderStage фильтрует пакеты по PTS текущего окна, чтобы
-  отбрасывать устаревшие пакеты, полученные до перемотки.
-- Добавлен эталонный PTS (seek_reference): все кадры с PTS меньше эталона
-  отбрасываются на уровне вставки в буфер. Это исключает подмешивание старых кадров
-  даже в момент гонки потоков.
+Исправления:
+- Один AudioDecoderStage для обеих дорожек (синхронность левого/правого уха).
+- Гистерезис аудиобуфера: остановка при 55%, возобновление при 45%.
+- Скорость подачи аудио ограничена 1.25x в зоне 45–55%.
+- Видео: тройной буфер, фильтрация по PTS, эталонный PTS после seek.
+- Очистка очередей при остановке/смене окна.
+- Логирование синхронизации (SYNC_AUDIO) в sync_monitor.log через SyncMonitor.
 """
 
 import time
@@ -35,10 +30,11 @@ from index.moov_builder import SEGMENT_SIZE
 from pipeline.stream_scheduler import StreamScheduler, PlaybackMode
 from pipeline.adaptive_chunk import AdaptiveChunkStrategy
 from config.timebase import SAMPLES_PER_VIDEO_FRAME, FRAMES_PER_CHUNK
+from utils.sync_logger import sync_monitor_logger
 
 logger = logging.getLogger(__name__)
 
-# --- Логгер для мониторинга seek (используется совместно с playback_engine) ---
+# --- Логгер для мониторинга видео (seek) ---
 monitor_logger = logging.getLogger("SeekMonitor")
 monitor_logger.setLevel(logging.DEBUG)
 if not monitor_logger.handlers:
@@ -46,6 +42,15 @@ if not monitor_logger.handlers:
     _mon_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
     monitor_logger.addHandler(_mon_handler)
 monitor_logger.propagate = False
+
+# --- Логгер для мониторинга аудио ---
+audio_monitor_logger = logging.getLogger("AudioMonitor")
+audio_monitor_logger.setLevel(logging.DEBUG)
+if not audio_monitor_logger.handlers:
+    _audio_mon_handler = logging.FileHandler("audio_monitor.log", encoding="utf-8")
+    _audio_mon_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    audio_monitor_logger.addHandler(_audio_mon_handler)
+audio_monitor_logger.propagate = False
 
 VideoPacket = Tuple[bytes, int]                       # (data, pts)
 AudioPacket = Tuple[int, bytes, bytes, int, bool]     # (track, data1, data2, pts, need_fade)
@@ -131,7 +136,8 @@ class ReaderStage(Stage):
 
 class DemuxerStage(Stage):
     def __init__(self, input_queue: queue.Queue,
-                 video_queue: queue.Queue, audio_queue: queue.Queue):
+                 video_queue: queue.Queue,
+                 audio_queue: queue.Queue):
         super().__init__("DemuxerStage")
         self._input_queue = input_queue
         self._video_queue = video_queue
@@ -248,20 +254,13 @@ class VideoDecoderStage(Stage):
         self._input_queue = input_queue
         self._buffer_cond = threading.Condition()
 
-        # Диапазон PTS активного окна
         self._pts_min = 0
         self._pts_max = 0
-
-        # Эталонный PTS после seek (кадры с меньшим PTS отбрасываются)
         self._seek_pts_reference = 0
 
         logger.info("VideoDecoderStage инициализирован")
 
     def set_active_window(self, window: IndexWindow):
-        """
-        Устанавливает допустимый диапазон PTS на основе текущего окна.
-        Пакеты с PTS вне этого диапазона будут отбрасываться.
-        """
         start_pts = window.window_start_chunk * FRAMES_PER_CHUNK * SAMPLES_PER_VIDEO_FRAME
         end_pts = (window.window_start_chunk + window.total_chunks) * FRAMES_PER_CHUNK * SAMPLES_PER_VIDEO_FRAME
         with self._buffer_cond:
@@ -270,16 +269,11 @@ class VideoDecoderStage(Stage):
             monitor_logger.info(f"VIDEO_DECODER_WINDOW_SET min_pts={self._pts_min} max_pts={self._pts_max}")
 
     def set_seek_reference(self, pts: int):
-        """
-        Устанавливает эталонный PTS после seek.
-        Все кадры с PTS меньше эталонного будут отброшены при вставке в буфер.
-        """
         with self._buffer_cond:
             self._seek_pts_reference = pts
             monitor_logger.info(f"VIDEO_DECODER_SEEK_REF pts={pts}")
 
     def _is_pts_valid(self, pts: int) -> bool:
-        """Проверяет, попадает ли PTS в активное окно."""
         return self._pts_min <= pts < self._pts_max
 
     def run(self):
@@ -292,7 +286,6 @@ class VideoDecoderStage(Stage):
                 continue
 
             for data, pts in packets:
-                # Отбрасываем пакеты, не принадлежащие активному окну
                 if not self._is_pts_valid(pts):
                     monitor_logger.debug(f"PACKET_OUTSIDE_WINDOW pts={pts}")
                     continue
@@ -308,7 +301,6 @@ class VideoDecoderStage(Stage):
                     logger.debug(f"Ошибка декодирования видео: {e}")
 
     def _push_frame(self, frame: np.ndarray, pts: int):
-        # Жёсткая фильтрация: кадр с PTS меньше эталонного не должен попасть в буфер
         if pts < self._seek_pts_reference:
             monitor_logger.debug(f"FILTER_OUTDATED pts={pts} < ref={self._seek_pts_reference}")
             return
@@ -324,15 +316,10 @@ class VideoDecoderStage(Stage):
         logger.debug("Видеобуфер переполнен, кадр отброшен (pts=%d)", pts)
 
     def notify_buffer_available(self):
-        """Вызывается, когда в буфере освобождается место."""
         with self._buffer_cond:
             self._buffer_cond.notify()
 
     def set_buffer(self, new_buffer: FrameRingBuffer):
-        """
-        Заменяет целевой буфер без остановки стадии.
-        Безопасно вызывать из другого потока.
-        """
         with self._buffer_cond:
             self._buffer = new_buffer
             monitor_logger.info(f"VIDEO_DECODER_BUFFER_SWITCH new_buffer={id(new_buffer)}")
@@ -347,7 +334,48 @@ class AudioDecoderStage(Stage):
         self._master_clock = master_clock
         self._input_queue = input_queue
         self._fade_len = 8
+
+        # Диапазон PTS активного окна для аудио
+        self._pts_min = 0
+        self._pts_max = 0
+
+        # Гистерезис: остановка при 55%, возобновление при 45%
+        self._audio_high_watermark = 0.55
+        self._audio_low_watermark = 0.45
+        self._audio_pause = False
+
+        # Коэффициент ограничения скорости подачи (1.25x)
+        self._speed_factor = 1.25
+
+        self._audio_cond = threading.Condition()
+
         logger.info("AudioDecoderStage инициализирован")
+
+    def set_active_window(self, window: IndexWindow):
+        start_pts = window.window_start_chunk * FRAMES_PER_CHUNK * SAMPLES_PER_VIDEO_FRAME
+        end_pts = (window.window_start_chunk + window.total_chunks) * FRAMES_PER_CHUNK * SAMPLES_PER_VIDEO_FRAME
+        with self._audio_cond:
+            self._pts_min = start_pts
+            self._pts_max = end_pts
+            audio_monitor_logger.info(f"AUDIO_DECODER_WINDOW_SET min_pts={self._pts_min} max_pts={self._pts_max}")
+
+    def _is_pts_valid(self, pts: int) -> bool:
+        return self._pts_min <= pts < self._pts_max
+
+    def _check_audio_queue(self) -> bool:
+        """Проверяет заполненность аудиоочередей MasterClock."""
+        if not self._master_clock:
+            return True
+        max_samples = getattr(self._master_clock, 'max_audio_queue_samples', 48000)
+        current_samples = self._master_clock.get_audio_queue_samples()
+        if current_samples >= max_samples * self._audio_high_watermark:
+            self._audio_pause = True
+            audio_monitor_logger.debug(f"AUDIO_QUEUE_HIGH samples={current_samples}/{max_samples}")
+            return False
+        elif current_samples <= max_samples * self._audio_low_watermark:
+            self._audio_pause = False
+            audio_monitor_logger.debug(f"AUDIO_QUEUE_LOW samples={current_samples}/{max_samples}")
+        return not self._audio_pause
 
     def run(self):
         logger.info("AudioDecoderStage запущен")
@@ -361,25 +389,58 @@ class AudioDecoderStage(Stage):
             for track_id, d1, d2, pts, need_fade in packets:
                 if track_id not in (2, 3):
                     continue
+
+                if not self._is_pts_valid(pts):
+                    audio_monitor_logger.debug(f"AUDIO_PACKET_OUTSIDE_WINDOW pts={pts}")
+                    continue
+
                 decoder_idx = track_id - 2
                 if decoder_idx >= len(self._decoders) or self._decoders[decoder_idx] is None:
                     continue
+
+                # Ожидание освобождения аудиоочереди
+                while not self.stop_event.is_set():
+                    if self._check_audio_queue():
+                        break
+                    with self._audio_cond:
+                        self._audio_cond.wait(timeout=0.05)
+                if self.stop_event.is_set():
+                    break
 
                 decoder = self._decoders[decoder_idx]
                 try:
                     pcm1 = decoder.decode(d1)
                     pcm2 = decoder.decode(d2)
                     pcm_block = np.concatenate([pcm1, pcm2])
-                    logger.debug(f"Аудио декодировано: трек {track_id}, pts={pts}, сэмплов={len(pcm_block)}")
+                    logger.debug(f"Аудио track {track_id} декодировано: pts={pts}, сэмплов={len(pcm_block)}")
                 except Exception:
                     continue
 
                 if need_fade and len(pcm_block) >= self._fade_len:
                     pcm_block[:self._fade_len] *= np.linspace(0, 1, self._fade_len)
 
-                # Отправляем напрямую в MasterClock
                 if self._master_clock:
                     self._master_clock.push_audio(track_id, pcm_block)
+                    audio_monitor_logger.debug(f"AUDIO_PUSHED track={track_id} pts={pts} samples={len(pcm_block)}")
+
+                    # Логирование синхронизации
+                    clock = self._master_clock.get_audio_clock() if self._master_clock else 0
+                    sync_monitor_logger.debug(
+                        f"SYNC_AUDIO track={track_id} pts={pts} samples={len(pcm_block)} clock={clock}"
+                    )
+
+                    # Регулировка темпа: в зоне 45–55% ограничиваем скорость подачи
+                    current_samples = self._master_clock.get_audio_queue_samples()
+                    max_samples = getattr(self._master_clock, 'max_audio_queue_samples', 48000)
+                    low_threshold = max_samples * self._audio_low_watermark
+                    high_threshold = max_samples * self._audio_high_watermark
+                    if low_threshold < current_samples < high_threshold:
+                        duration = len(pcm_block) / 48000.0
+                        time.sleep(duration / self._speed_factor)
+
+    def notify_audio_available(self):
+        with self._audio_cond:
+            self._audio_cond.notify_all()
 
 
 class ChunkPipeline:
@@ -405,7 +466,6 @@ class ChunkPipeline:
         self._stages: List[Stage] = []
 
     def set_master_clock(self, master_clock):
-        """Подключает MasterClock после создания."""
         self._master_clock = master_clock
         for stage in self._stages:
             if isinstance(stage, AudioDecoderStage):
@@ -419,35 +479,24 @@ class ChunkPipeline:
         with self._window_lock:
             self._window = new_window
             self._scheduler.set_normal_mode(0, new_window.total_chunks)
-        # Обновляем допустимый диапазон PTS для видео-декодера
+        # Обновляем диапазоны PTS для видео- и аудиостадий
         for stage in self._stages:
-            if isinstance(stage, VideoDecoderStage):
+            if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
                 stage.set_active_window(new_window)
 
     def set_video_buffer(self, new_buffer: FrameRingBuffer):
-        """
-        Перенаправляет вывод VideoDecoderStage в новый буфер.
-        Конвейер продолжает работать без остановки.
-        """
         self._video_buffer = new_buffer
-        # Обновляем планировщик
         self._scheduler.set_buffer(new_buffer)
-        # Обновляем стадии (если они уже запущены)
         for stage in self._stages:
             if isinstance(stage, VideoDecoderStage):
                 stage.set_buffer(new_buffer)
 
     def set_seek_reference(self, pts: int):
-        """
-        Устанавливает эталонный PTS для фильтрации старых кадров.
-        Проксирует в VideoDecoderStage.
-        """
         for stage in self._stages:
             if isinstance(stage, VideoDecoderStage):
                 stage.set_seek_reference(pts)
 
     def flush(self):
-        """Очищает все внутренние очереди, отбрасывая устаревшие пакеты."""
         for q in (self._raw_queue, self._video_queue, self._audio_queue):
             while not q.empty():
                 try:
@@ -462,15 +511,16 @@ class ChunkPipeline:
         reader = ReaderStage(self._mp4_path, self, self._scheduler,
                              self._raw_queue, AdaptiveChunkStrategy())
         demuxer = DemuxerStage(self._raw_queue,
-                               self._video_queue, self._audio_queue)
+                               self._video_queue,
+                               self._audio_queue)
         video_dec = VideoDecoderStage(self._video_decoder, self._video_buffer,
                                       self._video_queue)
         audio_dec = AudioDecoderStage(self._audio_decoders, self._master_clock,
                                       self._audio_queue)
 
-        # Устанавливаем окно для видео-декодера ДО запуска
+        # Устанавливаем окно до запуска
         video_dec.set_active_window(self.get_window_snapshot())
-        # Сбрасываем эталонный PTS (будет установлен заново при seek)
+        audio_dec.set_active_window(self.get_window_snapshot())
         video_dec.set_seek_reference(0)
 
         self._stages = [reader, demuxer, video_dec, audio_dec]
@@ -485,10 +535,11 @@ class ChunkPipeline:
         for stage in self._stages:
             if isinstance(stage, VideoDecoderStage):
                 stage.notify_buffer_available()
+            elif isinstance(stage, AudioDecoderStage):
+                stage.notify_audio_available()
         for stage in self._stages:
             stage.join(timeout=2.0)
         self._stages.clear()
 
-        # Очистка всех внутренних очередей
         self.flush()
         logger.info("ChunkPipeline: все стадии остановлены, очереди очищены")

@@ -233,6 +233,7 @@ class PlaybackEngine:
             self._current_frame_idx = pts_to_video_frame(pts)
             if self._master_clock:
                 self._master_clock.set_clock(pts)
+                self._master_clock.flush_audio()
 
         local_chunk = (self._current_frame_idx - window.window_start_frame) // 12
         self._pipeline._scheduler.set_normal_mode(local_chunk, window.total_chunks)
