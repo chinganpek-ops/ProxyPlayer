@@ -3,13 +3,42 @@ chunk_pipeline.py – трёхэтапный конвейер загрузки �
 v2 – интеграция с MasterClock: AudioDecoderStage пушит аудио напрямую в MasterClock.
 MultiTrackAudioBuffer больше не используется.
 
-Исправления:
+Исправления (исходные):
 - Один AudioDecoderStage для обеих дорожек (синхронность левого/правого уха).
 - Гистерезис аудиобуфера: остановка при 55%, возобновление при 45%.
 - Скорость подачи аудио ограничена 1.25x в зоне 45–55%.
 - Видео: тройной буфер, фильтрация по PTS, эталонный PTS после seek.
 - Очистка очередей при остановке/смене окна.
 - Логирование синхронизации (SYNC_AUDIO) в sync_monitor.log через SyncMonitor.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью):
+- ReaderStage: при queue.Full уже прочитанные с диска данные раньше
+  молча терялись (I/O выполнен, а put в очередь — нет), и чанк не
+  помечался ни успешным, ни неудачным. Теперь до 5 попыток отдать уже
+  прочитанные данные в очередь, и только если не вышло — mark_chunk_failed,
+  чтобы планировщик выдал этот чанк повторно.
+- DemuxerStage: теперь получает ссылку на StreamScheduler и вызывает
+  mark_chunk_failed(), если после исчерпания ретраев не удалось положить
+  пакеты в video_queue/audio_queue (раньше это тихо терялось).
+  _safe_put() возвращает bool вместо None.
+- AudioDecoderStage: except Exception при декодировании аудио больше не
+  проглатывается молча — добавлено сообщение с track/pts для диагностики
+  (поведение — continue — не изменилось).
+- ChunkPipeline: добавлен extend_window() — расширяет активное окно при
+  росте live-файла, не сбрасывая текущую позицию чтения/декодирования
+  (в отличие от update_window(), который предназначен для полной смены
+  окна, например при seek, и всегда перематывает планировщик на начало).
+- ChunkPipeline.start(): DemuxerStage теперь создаётся с scheduler.
+- НОВОЕ: shift_window() — плавное переключение на скользящее окно
+  (LazyIndex.build_slid_window()): в отличие от update_window(), не
+  сбрасывает позицию, а пересчитывает её через
+  StreamScheduler.shift_loaded(), сохраняя уже загруженные чанки; в
+  отличие от extend_window(), умеет сдвигать не только конец окна, но и
+  начало. Корректность при этом обеспечивается overlap'ом самого
+  new_window (строит LazyIndex), а не логикой этого метода — см.
+  докстринг shift_window().
+
+Логика демукса, декодирования, гистерезиса и PTS-фильтрации не менялась.
 """
 
 import time
@@ -38,7 +67,11 @@ logger = logging.getLogger(__name__)
 monitor_logger = logging.getLogger("SeekMonitor")
 monitor_logger.setLevel(logging.DEBUG)
 if not monitor_logger.handlers:
-    _mon_handler = logging.FileHandler("seek_monitor.log", encoding="utf-8")
+    from logging.handlers import RotatingFileHandler
+    _mon_handler = RotatingFileHandler(
+        "seek_monitor.log", encoding="utf-8",
+        maxBytes=50 * 1024 * 1024, backupCount=5,
+    )
     _mon_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
     monitor_logger.addHandler(_mon_handler)
 monitor_logger.propagate = False
@@ -47,7 +80,11 @@ monitor_logger.propagate = False
 audio_monitor_logger = logging.getLogger("AudioMonitor")
 audio_monitor_logger.setLevel(logging.DEBUG)
 if not audio_monitor_logger.handlers:
-    _audio_mon_handler = logging.FileHandler("audio_monitor.log", encoding="utf-8")
+    from logging.handlers import RotatingFileHandler
+    _audio_mon_handler = RotatingFileHandler(
+        "audio_monitor.log", encoding="utf-8",
+        maxBytes=50 * 1024 * 1024, backupCount=5,
+    )
     _audio_mon_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
     audio_monitor_logger.addHandler(_audio_mon_handler)
 audio_monitor_logger.propagate = False
@@ -116,16 +153,36 @@ class ReaderStage(Stage):
             logger.debug(f"Чтение чанка {local_chunk}, смещение={chunk_start_offset}, размер={size}")
             try:
                 data = self._reader.read_sequential(chunk_start_offset, size)
-                if data:
-                    self._output_queue.put((local_chunk, data, window), timeout=2.0)
-                    logger.debug(f"Чанк {local_chunk} прочитан и помещён в очередь")
-                else:
-                    self._scheduler.mark_chunk_failed(local_chunk)
-            except queue.Full:
-                logger.warning("raw_queue переполнена, повторная попытка для чанка %d", local_chunk)
-                self.stop_event.wait(0.1)
             except Exception as e:
                 logger.error(f"Ошибка чтения чанка {local_chunk}: {e}", exc_info=True)
+                self._scheduler.mark_chunk_failed(local_chunk)
+                continue
+
+            if not data:
+                self._scheduler.mark_chunk_failed(local_chunk)
+                continue
+
+            # Данные уже прочитаны с диска (I/O выполнен) — при переполнении
+            # очереди не отбрасываем их, а пробуем повторно; теряем чанк
+            # только если совсем не удалось его передать дальше.
+            put_ok = False
+            for attempt in range(5):
+                try:
+                    self._output_queue.put((local_chunk, data, window), timeout=2.0)
+                    put_ok = True
+                    break
+                except queue.Full:
+                    logger.warning("raw_queue переполнена, попытка %d/5 для чанка %d",
+                                    attempt + 1, local_chunk)
+                    if self.stop_event.is_set():
+                        break
+                    self.stop_event.wait(0.1)
+
+            if put_ok:
+                logger.debug(f"Чанк {local_chunk} прочитан и помещён в очередь")
+            else:
+                logger.error("Не удалось поместить чанк %d в очередь после повторных "
+                             "попыток, помечаю как неудачный", local_chunk)
                 self._scheduler.mark_chunk_failed(local_chunk)
 
     def stop(self):
@@ -137,11 +194,13 @@ class ReaderStage(Stage):
 class DemuxerStage(Stage):
     def __init__(self, input_queue: queue.Queue,
                  video_queue: queue.Queue,
-                 audio_queue: queue.Queue):
+                 audio_queue: queue.Queue,
+                 scheduler: StreamScheduler):
         super().__init__("DemuxerStage")
         self._input_queue = input_queue
         self._video_queue = video_queue
         self._audio_queue = audio_queue
+        self._scheduler = scheduler
         logger.info("DemuxerStage инициализирован")
 
     def run(self):
@@ -155,22 +214,32 @@ class DemuxerStage(Stage):
 
             try:
                 v_packets, a_packets = self._demux(local_chunk, raw_data, window_snapshot)
+                v_ok = True
+                a_ok = True
                 if v_packets:
-                    self._safe_put(self._video_queue, (local_chunk, v_packets), "video")
+                    v_ok = self._safe_put(self._video_queue, (local_chunk, v_packets), "video")
                 if a_packets:
-                    self._safe_put(self._audio_queue, (local_chunk, a_packets), "audio")
+                    a_ok = self._safe_put(self._audio_queue, (local_chunk, a_packets), "audio")
+                if not (v_ok and a_ok):
+                    # Не удалось доставить пакеты дальше по конвейеру —
+                    # сообщаем планировщику, чтобы чанк выдали повторно,
+                    # а не считали молча "загруженным".
+                    self._scheduler.mark_chunk_failed(local_chunk)
             except Exception as e:
                 logger.error(f"Ошибка демукса чанка {local_chunk}: {e}", exc_info=True)
+                self._scheduler.mark_chunk_failed(local_chunk)
 
-    def _safe_put(self, q: queue.Queue, item, qname: str, max_retries=5, retry_delay=0.2):
+    def _safe_put(self, q: queue.Queue, item, qname: str, max_retries=5, retry_delay=0.2) -> bool:
+        """Возвращает True, если элемент удалось поместить в очередь, иначе False."""
         for attempt in range(max_retries):
             try:
                 q.put(item, timeout=1.0)
-                return
+                return True
             except queue.Full:
                 logger.warning("Очередь %s переполнена (попытка %d/%d)", qname, attempt+1, max_retries)
                 self.stop_event.wait(retry_delay)
         logger.error("Не удалось поместить в очередь %s после %d попыток, отбрасываю", qname, max_retries)
+        return False
 
     def _demux(self, local_chunk: int, raw_data: bytes, window: IndexWindow) -> Tuple[List[VideoPacket], List[AudioPacket]]:
         video_packets = []
@@ -413,7 +482,8 @@ class AudioDecoderStage(Stage):
                     pcm2 = decoder.decode(d2)
                     pcm_block = np.concatenate([pcm1, pcm2])
                     logger.debug(f"Аудио track {track_id} декодировано: pts={pts}, сэмплов={len(pcm_block)}")
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Ошибка декодирования аудио track={track_id} pts={pts}: {e}")
                     continue
 
                 if need_fade and len(pcm_block) >= self._fade_len:
@@ -476,6 +546,12 @@ class ChunkPipeline:
             return self._window
 
     def update_window(self, new_window: IndexWindow):
+        """
+        Полная смена активного окна (например, после seek в другую часть
+        файла): планировщик перезапускается с начала нового окна.
+        Для роста live-файла внутри уже открытого окна используйте
+        extend_window() — он не сбрасывает текущую позицию.
+        """
         with self._window_lock:
             self._window = new_window
             self._scheduler.set_normal_mode(0, new_window.total_chunks)
@@ -483,6 +559,63 @@ class ChunkPipeline:
         for stage in self._stages:
             if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
                 stage.set_active_window(new_window)
+
+    def extend_window(self, new_window: IndexWindow):
+        """
+        Расширяет активное окно вперёд при росте live-файла.
+
+        В отличие от update_window(), НЕ сбрасывает текущую позицию
+        чтения/декодирования — только поднимает верхнюю границу
+        total_chunks у планировщика и PTS-диапазоны видео/аудио стадий.
+        Предполагается, что new_window.window_start_frame совпадает со
+        start_frame текущего окна (ровно то, что делает
+        LazyIndex.expand_window()/refresh_from_disk()).
+        """
+        with self._window_lock:
+            self._window = new_window
+            self._scheduler.extend_total_chunks(new_window.total_chunks)
+        for stage in self._stages:
+            if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
+                stage.set_active_window(new_window)
+
+    def shift_window(self, new_window: IndexWindow):
+        """
+        Плавное переключение на скользящее окно, построенное
+        LazyIndex.build_slid_window() (оба края окна сдвинуты вперёд,
+        в отличие от extend_window(), где сдвигается только конец).
+
+        В отличие от update_window(), НЕ сбрасывает текущую позицию
+        чтения/декодирования — пересчитывает её в новой локальной системе
+        координат через scheduler.shift_loaded(), сохраняя уже загруженные
+        чанки, которые попадают в новое окно.
+
+        Порядок вызова важен для отсутствия гонки с очередями конвейера:
+        1) new_window должен быть построен с overlap, покрывающим глубину
+           очередей (см. DEFAULT_SLIDE_OVERLAP_CHUNKS в lazy_index.py) —
+           это гарантирует, что пакеты, уже лежащие в raw_queue/video_queue/
+           audio_queue со старыми глобальными PTS на момент вызова, всё
+           ещё попадают в диапазон [pts_min, pts_max) нового окна и не
+           будут отброшены PTS-фильтром сразу после свопа.
+        2) Вызывающий (PlaybackEngine) обязан вызвать
+           LazyIndex.commit_window(new_window) ТОЛЬКО после успешного
+           возврата из этого метода — так self._window в LazyIndex и
+           активное окно в ChunkPipeline не могут разойтись.
+        """
+        with self._window_lock:
+            old_window = self._window
+            chunk_shift = new_window.window_start_chunk - old_window.window_start_chunk
+            self._window = new_window
+            self._scheduler.shift_loaded(chunk_shift, new_window.total_chunks)
+        # Обновляем диапазоны PTS для видео- и аудиостадий — благодаря
+        # overlap в new_window новый pts_min не может быть больше PTS
+        # пакетов, уже поставленных в очередь до переключения.
+        for stage in self._stages:
+            if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
+                stage.set_active_window(new_window)
+        logger.info(
+            "ChunkPipeline: окно сдвинуто (chunk_shift=%d), новые кадры %d-%d",
+            chunk_shift, new_window.window_start_frame, new_window.window_end_frame,
+        )
 
     def set_video_buffer(self, new_buffer: FrameRingBuffer):
         self._video_buffer = new_buffer
@@ -512,7 +645,8 @@ class ChunkPipeline:
                              self._raw_queue, AdaptiveChunkStrategy())
         demuxer = DemuxerStage(self._raw_queue,
                                self._video_queue,
-                               self._audio_queue)
+                               self._audio_queue,
+                               self._scheduler)
         video_dec = VideoDecoderStage(self._video_decoder, self._video_buffer,
                                       self._video_queue)
         audio_dec = AudioDecoderStage(self._audio_decoders, self._master_clock,

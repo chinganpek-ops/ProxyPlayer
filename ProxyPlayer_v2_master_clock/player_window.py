@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 player_window.py – главное окно плеера и менеджер окон (ProxyPlayer v2).
 Адаптирован под MasterClock: mute и переключение дорожек работают через master_clock.
@@ -7,6 +6,30 @@ player_window.py – главное окно плеера и менеджер о
 - Кнопка Play блокируется до завершения актуального seek.
 - Кнопка Live, слайдер, таймкод – всё идёт через _start_seek.
 - Устранена лавина потоков при многократных нажатиях.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью — index_builder.py заменён на index_service.py):
+- _start_index_builder() удалён (он и раньше нигде не вызывался — был
+  мёртвым кодом) и заменён на _ensure_index_service(), который реально
+  вызывается из обоих мест, где готовится зеркало (__init__ и
+  _open_player_from_path).
+- ManagerWindow._index_builder_process (одиночный процесс) заменён на
+  ManagerWindow._index_services: dict[str, QProcess] — по одному процессу
+  IndexService НА ФАЙЛ (ключ — resolved-путь к .idx), а не один процесс на
+  всё приложение и не один на каждое окно плеера. Если несколько окон
+  (сетка до 6 плееров) открывают один и тот же растущий файл, они делят
+  один и тот же процесс IndexService и, соответственно, одно и то же
+  зеркало — так и задумано в idx_cache.py ("Единое зеркало для всех
+  процессов"). Процесс живёт всё время работы ManagerWindow и
+  останавливается только в _stop_all(); закрытие одного отдельного окна
+  плеера НЕ останавливает IndexService, даже если оно было последним, кто
+  его использовал — сервис дешёвый (поллинг раз в poll_interval + IPC), а
+  останавливать/перезапускать его по каждому открытию/закрытию окна
+  добавило бы гонки без реальной пользы.
+- Запуск IndexService идёт через новый флаг main.py --index-service
+  <idx_path> <poll_interval> (по аналогии с уже существующими --managed/
+  --moov/--index-builder), а не прямым вызовом отдельного скрипта — так
+  сохраняется совместимость с frozen-сборкой, где нет отдельных .py
+  файлов, есть только один exe с диспетчеризацией по флагам.
 """
 
 import sys
@@ -62,6 +85,12 @@ PANEL_WIDTH = 30
 COLS = 3
 ROWS = 2
 MAX_PLAYERS = COLS * ROWS
+
+# Темп опроса исходного .idx сервисом IndexService по умолчанию (сек).
+# Совпадает со значением по умолчанию в index_service.py — держим здесь
+# отдельной константой, чтобы её можно было переопределить через config
+# ('index_poll_interval_sec'), не трогая сам index_service.py.
+DEFAULT_INDEX_POLL_INTERVAL_SEC = 10.0
 
 
 class OpenPlayerWorker(QThread):
@@ -270,6 +299,8 @@ class PlayerWidget(QWidget):
             self._seeking = False
             self._seek_pending = False
             self._update_frame()
+            self._sync_slider_to_playback()
+            self._update_tc_label()
             self.video_widget.hide_placeholder()
             self.video_widget.update()
 
@@ -403,6 +434,22 @@ class PlayerWidget(QWidget):
         self.tc_label.setText(tc)
         if not self.tc_input.hasFocus(): self.tc_input.setText(tc)
 
+    def _sync_slider_to_playback(self):
+        """Устанавливает слайдер на фактическую позицию воспроизведения."""
+        if not isinstance(self._active_player, StreamController):
+            return
+        try:
+            current_frame = pts_to_video_frame(self.player.audio_clock)
+            total = self.player.total_frames
+            if total > 1:
+                max_slider = total - 1
+                if not self.player._finalized:
+                    max_slider = max(0, total - 1600)
+                self.slider.setRange(0, max_slider)
+                self.slider.setValue(current_frame)
+        except Exception as e:
+            logger.debug(f"Не удалось синхронизировать слайдер: {e}")    
+
     def _show_tc_for_frame(self, frame_idx):
         total_seconds = frame_idx / self.player.fps
         h, m = divmod(int(total_seconds), 3600); m, s = divmod(m, 60)
@@ -473,6 +520,8 @@ class PlayerWidget(QWidget):
         self._seek_pending = False
         try:
             self.player.start_playback()
+            self._sync_slider_to_playback()
+            self._update_tc_label()
             if not self.render_timer.isActive():
                 self.render_timer.start()
             self.video_widget.hide_placeholder()
@@ -537,7 +586,11 @@ class ManagerWindow(QMainWindow):
         self.config = config
         self.use_moov = use_moov
         self.processes = []; self.hwnd_positions = {}; self._closing = False
-        self._index_builder_process = None; self._last_worker = None
+        # ПРАВКА: один процесс IndexService на ФАЙЛ (ключ — resolved-путь
+        # к .idx), а не один общий процесс на всё приложение — см. докстринг
+        # модуля и _ensure_index_service() ниже.
+        self._index_services = {}
+        self._last_worker = None
         self.setWindowTitle("ProxyPlayer v2 – Panel")
         self.setStyleSheet("background-color: #2b2b2b;")
         icon_path = os.path.join(os.path.dirname(__file__), 'icon.ico')
@@ -571,7 +624,9 @@ class ManagerWindow(QMainWindow):
 
         if mp4_path and mp4_path.exists() and mp4_path.suffix.lower() == '.mp4':
             try:
-                mirror = prepare_mirror(self._find_idx_for(mp4_path))
+                idx = self._find_idx_for(mp4_path)
+                mirror = prepare_mirror(idx)
+                self._ensure_index_service(idx)
                 self._add_player(mp4_path, use_moov, mirror_path=str(mirror))
             except Exception as e:
                 logger.error(f"Не удалось подготовить зеркало: {e}")
@@ -583,22 +638,50 @@ class ManagerWindow(QMainWindow):
         if not idx.exists(): idx = mp4_path.parent / f"{mp4_path.stem}.idx"
         return idx
 
-    def _start_index_builder(self, mp4_path: Path, use_moov: bool):
-        if use_moov: return
-        idx_path = self._find_idx_for(mp4_path)
-        if not idx_path.exists():
-            logger.warning("IDX не найден, IndexBuilder не запущен")
+    def _ensure_index_service(self, idx_path: Path):
+        """
+        Запускает IndexService для указанного .idx, если для него ещё нет
+        живого процесса. Один процесс IndexService обслуживает один .idx —
+        если несколько окон плеера открывают один и тот же растущий файл,
+        все они делят один и тот же процесс и одно и то же зеркало (см.
+        idx_cache.py: "Единое зеркало для всех процессов").
+
+        Процесс живёт всё время работы ManagerWindow и останавливается
+        только в _stop_all() — закрытие одного отдельного окна плеера НЕ
+        останавливает IndexService: он дешёвый (поллинг раз в
+        poll_interval + IPC-уведомления), а привязывать его жизненный цикл
+        к отдельным окнам добавило бы гонки без реальной пользы.
+        """
+        key = str(idx_path.resolve())
+        existing = self._index_services.get(key)
+        if existing is not None and existing.state() == QProcess.Running:
             return
+
         exe = sys.executable
+        poll_interval = self.config.get('index_poll_interval_sec', DEFAULT_INDEX_POLL_INTERVAL_SEC)
         if getattr(sys, 'frozen', False):
-            args = ['--index-builder', str(idx_path)]
+            args = ['--index-service', str(idx_path), str(poll_interval)]
         else:
             script = os.path.join(os.path.dirname(__file__), 'main.py')
-            args = [script, '--index-builder', str(idx_path)]
-        self._index_builder_process = QProcess(self)
-        self._index_builder_process.setProcessChannelMode(QProcess.ForwardedChannels)
-        self._index_builder_process.start(exe, args)
-        logger.info("IndexBuilder запущен для %s", mp4_path)
+            args = [script, '--index-service', str(idx_path), str(poll_interval)]
+
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.ForwardedChannels)
+        proc.finished.connect(lambda code, status, k=key: self._on_index_service_finished(k, code, status))
+        proc.start(exe, args)
+        self._index_services[key] = proc
+        logger.info("IndexService запущен для %s (poll_interval=%.1f с)", idx_path, poll_interval)
+
+    def _on_index_service_finished(self, key: str, exit_code: int, exit_status):
+        # self._closing=True означает штатное завершение работы приложения
+        # (см. _stop_all) — тогда предупреждение избыточно.
+        if key in self._index_services and not self._closing:
+            logger.warning(
+                "IndexService для %s неожиданно завершился (code=%d) — "
+                "обновление метаданных для этого файла прекращено до "
+                "перезапуска плеера", key, exit_code,
+            )
+        self._index_services.pop(key, None)
 
     def _force_place_first_player(self):
         if not self.hwnd_positions and self.processes:
@@ -695,6 +778,7 @@ class ManagerWindow(QMainWindow):
             return
         try:
             mirror = prepare_mirror(idx)
+            self._ensure_index_service(idx)
             self._add_player(mp4_path, use_moov=False, mirror_path=str(mirror))
         except Exception as e:
             logger.error(f"Ошибка подготовки зеркала: {e}")
@@ -771,9 +855,11 @@ class ManagerWindow(QMainWindow):
         reply = msg.exec_()
         if reply == QMessageBox.Yes:
             self.server.close()
-            if self._index_builder_process:
-                self._index_builder_process.kill()
-                self._index_builder_process.waitForFinished(1000)
+            for key, proc in list(self._index_services.items()):
+                proc.terminate()
+                if not proc.waitForFinished(1000):
+                    proc.kill()
+            self._index_services.clear()
             for proc in self.processes:
                 if hasattr(proc, 'close'): proc.close()
             self.tray_icon.hide()
@@ -787,4 +873,3 @@ class ManagerWindow(QMainWindow):
             self._stop_all()
             self.tray_icon.hide()
             QApplication.quit()
-            event.accept()

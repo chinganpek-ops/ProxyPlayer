@@ -6,9 +6,21 @@ idx_cache.py – локальный кэш индекса (.idx) с поддер
 - prepare_mirror() теперь вызывается только IndexService (процессом-менеджером).
 - Плееры используют open_idx_mmap() напрямую, получая путь к уже готовому зеркалу.
 - Добавлена get_mirror_path() – возвращает путь к зеркалу без попытки докачки.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью):
+- _get_base_name(): имя зеркала теперь строится через SHA1-хэш полного пути,
+  а не обрезкой строки до последних 50 символов. Раньше два разных .idx-файла
+  с одинаковым хвостом пути (например, на разных шарах/серверах) могли
+  схлопнуться в один и тот же файл зеркала и портить данные друг друга.
+- mirror_ipc_name(): та же хэш-функция используется для имени локального
+  IPC-канала (QLocalServer/QLocalSocket) между IndexService и плеерами —
+  так плееру не нужно знать PID процесса IndexService заранее, оба процесса
+  вычисляют одно и то же имя из пути к .idx.
+- Логика открытия/докачки/mmap не менялась.
 """
 
 import os
+import hashlib
 import mmap
 import logging
 import threading
@@ -57,9 +69,41 @@ def _get_mirror_dir() -> Path:
     return mirror_dir
 
 
+def _path_digest(idx_path: Path) -> str:
+    """
+    Единый источник правды для "уникального имени по пути" — используется и
+    для имени файла зеркала, и для имени IPC-канала IndexService, чтобы оба
+    процесса детерминированно приходили к одному и тому же идентификатору,
+    зная только путь к .idx (без обмена PID или доп. согласований).
+    """
+    resolved = str(idx_path.resolve())
+    return hashlib.sha1(resolved.encode('utf-8')).hexdigest()[:16]
+
+
 def _get_base_name(idx_path: Path) -> str:
-    safe = str(idx_path.resolve()).replace(':', '_').replace('\\', '_').replace('/', '_')
-    return safe[-50:] if len(safe) > 50 else safe
+    """
+    Уникальное имя зеркала по полному пути.
+
+    Хэш от resolve()-пути гарантирует отсутствие коллизий между разными
+    файлами (в отличие от прежней обрезки строки по последним 50 символам,
+    где два .idx с длинным общим хвостом пути схлопывались в одно зеркало).
+    Человекочитаемый stem оставлен только для удобства просмотра папки
+    кэша глазами — на уникальность имени он не влияет.
+    """
+    digest = _path_digest(idx_path)
+    readable = "".join(c if c.isalnum() or c in "._-" else "_" for c in idx_path.stem)[:40]
+    return f"{readable}_{digest}"
+
+
+def mirror_ipc_name(idx_path: Path) -> str:
+    """
+    Детерминированное имя локального IPC-канала (QLocalServer/QLocalSocket)
+    для связки IndexService <-> плееры по конкретному .idx-файлу.
+    Строится из того же хэша, что и имя зеркала, поэтому плееру не нужно
+    знать PID процесса IndexService — оба процесса вычисляют одно и то же
+    имя из пути к .idx.
+    """
+    return f"ProxyPlayerIndexService_{_path_digest(idx_path)}"
 
 
 def _mirror_path(idx_path: Path) -> Path:

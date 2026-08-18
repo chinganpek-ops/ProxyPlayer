@@ -4,6 +4,31 @@ stream_scheduler.py – приоритетный планировщик загр
 - Загрузка возобновляется при заполнении <= 60%.
 - Останавливается при заполнении >= 95%.
 - В NORMAL режиме скорость загрузки ограничена 1.15x скорости потребления.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью):
+- extend_total_chunks(): поднимает только верхнюю границу total_chunks, не
+  трогая текущую позицию (_current_chunk), уже загруженные чанки
+  (_loaded_chunks) и режим (_mode). Изначально был нужен для роста
+  live-файла; сейчас, после введения скользящего окна (см. shift_loaded
+  ниже), основным механизмом live-роста стал он, но extend_total_chunks()
+  оставлен как самостоятельный инструмент — например, если понадобится
+  просто продлить границу без сдвига начала (см. LazyIndex.expand_window).
+
+- НОВОЕ: shift_loaded() — пересчитывает локальные индексы планировщика под
+  скользящее окно, построенное LazyIndex.build_slid_window(). Когда окно
+  сдвигается вперёд (меняются И start, И end), все локальные индексы
+  (_current_chunk, _loaded_chunks, _target_chunk) смещены относительно
+  нового окна на chunk_shift = new_window_start_chunk - old_window_start_chunk.
+  В отличие от set_normal_mode()/set_seek_mode(), НЕ сбрасывает _mode,
+  _loading_allowed, _last_chunk_ts — переключение окна не должно прерывать
+  то, что планировщик уже знает о текущем воспроизведении (скорость подачи,
+  гистерезис буфера). Чанки, ушедшие за пределы нового окна (new_local < 0
+  после сдвига — то есть они были в самом начале старого окна, до которого
+  новое окно уже не дотягивается), просто выбывают из _loaded_chunks: эти
+  данные больше не адресуемы в новой локальной системе координат, и это
+  не потеря — соответствующие кадры уже были показаны раньше (сдвиг
+  происходит только вперёд, с overlap "с запасом" от текущей позиции).
+  Остальная логика планировщика не менялась.
 """
 
 import threading
@@ -76,6 +101,69 @@ class StreamScheduler:
             self._last_chunk_ts = 0.0
             logger.info("StreamScheduler: NORMAL mode, current=%d, total=%d",
                         self._current_chunk, self._total_chunks)
+
+    def extend_total_chunks(self, new_total_local_chunks: int):
+        """
+        Расширяет верхнюю границу доступных чанков БЕЗ сброса текущей
+        позиции чтения (_current_chunk), уже загруженных чанков
+        (_loaded_chunks) и режима (_mode).
+
+        В отличие от set_normal_mode(), безопасен для вызова во время
+        активного воспроизведения.
+        """
+        with self._lock:
+            if new_total_local_chunks > self._total_chunks:
+                old = self._total_chunks
+                self._total_chunks = new_total_local_chunks
+                logger.info("StreamScheduler: total_chunks расширен %d -> %d",
+                            old, self._total_chunks)
+
+    def shift_loaded(self, chunk_shift: int, new_total_local_chunks: int):
+        """
+        Пересчитывает локальные индексы планировщика под новое (сдвинутое)
+        окно: new_local = old_local - chunk_shift.
+
+        chunk_shift = new_window.window_start_chunk - old_window.window_start_chunk
+        (считает вызывающий — обычно ChunkPipeline.shift_window() — оба
+        значения глобальные индексы чанков, так что знак учитывается
+        автоматически).
+
+        В отличие от set_normal_mode()/set_seek_mode(), НЕ сбрасывает
+        _mode, _loading_allowed, _last_chunk_ts — переключение на
+        скользящее окно не должно прерывать то, что планировщик уже знает
+        о темпе воспроизведения. Чанки, для которых new_local < 0 или
+        new_local >= new_total_local_chunks (вышли за пределы нового окна),
+        удаляются из _loaded_chunks — они больше не адресуемы в новой
+        локальной системе координат.
+        """
+        with self._lock:
+            if chunk_shift == 0:
+                if new_total_local_chunks > self._total_chunks:
+                    self._total_chunks = new_total_local_chunks
+                logger.debug("[Scheduler] shift_loaded: chunk_shift=0, только total_chunks обновлён")
+                return
+
+            old_current = self._current_chunk
+            old_target = self._target_chunk
+            old_loaded_count = len(self._loaded_chunks)
+
+            shifted_loaded: Set[int] = set()
+            for c in self._loaded_chunks:
+                nc = c - chunk_shift
+                if 0 <= nc < new_total_local_chunks:
+                    shifted_loaded.add(nc)
+            self._loaded_chunks = shifted_loaded
+
+            self._current_chunk = max(0, old_current - chunk_shift)
+            self._target_chunk = max(0, old_target - chunk_shift)
+            self._total_chunks = new_total_local_chunks
+
+            logger.info(
+                "StreamScheduler: окно сдвинуто (chunk_shift=%d): current %d -> %d, "
+                "total_chunks -> %d, loaded_chunks %d -> %d",
+                chunk_shift, old_current, self._current_chunk,
+                self._total_chunks, old_loaded_count, len(self._loaded_chunks),
+            )
 
     def set_seek_mode(self, target_local_chunk: int, total_local_chunks: int):
         with self._lock:

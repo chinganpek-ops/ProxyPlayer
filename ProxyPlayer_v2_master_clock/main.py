@@ -5,7 +5,7 @@ main.py – точка входа ProxyPlayer v2.
 Режимы:
   - обычный плеер (main.py <mp4>)
   - управляемый плеер (main.py <mp4> --managed)
-  - фоновый построитель индекса (main.py --index-builder <idx> [интервал])
+  - фоновый сервис индекса (main.py --index-service <idx> [poll_interval])
   - пустой менеджер (запуск без аргументов или с ".")
   - единый экземпляр менеджера (single instance)
 Менеджер самостоятельно разрешает ID файлов, переданных из Dalet.
@@ -19,99 +19,12 @@ import threading
 import logging
 from pathlib import Path
 
-# ═══════════════════════════════════════════════════════════════════
-# Режим построителя индекса (без GUI)
-# ═══════════════════════════════════════════════════════════════════
-if '--index-builder' in sys.argv:
-    try:
-        idx_flag = sys.argv.index('--index-builder')
-        args = sys.argv[idx_flag+1:]
-        if len(args) < 1:
-            print("Usage: --index-builder <idx_path> [poll_interval]")
-            sys.exit(1)
-        idx_path = Path(args[0])
-        poll_interval = float(args[1]) if len(args) > 1 else 0.5
-
-        if not getattr(sys, 'frozen', False):
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-        from index_builder import IndexBuilder
-        builder = IndexBuilder(idx_path, poll_interval)
-        builder.start()
-
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            builder.stop()
-        sys.exit(0)
-    except Exception as e:
-        print(f"Index builder failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-# ═══════════════════════════════════════════════════════════════════
-# Функция преобразования пути от Video Helper (расширенная для ID)
-# ═══════════════════════════════════════════════════════════════════
-def resolve_media_path(input_path: str, homedir: str = "") -> Path:
-    """
-    Преобразует путь от Video Helper (.wrec, .mp4) или ID файла
-    в полный путь к MP4-файлу.
-    Если input_path состоит только из цифр, ищет файл ID_YYYYMMDD_HHMMSS.mp4 в homedir.
-    """
-    path = Path(input_path)
-    # 1. Абсолютный путь существует – сразу возвращаем
-    if path.is_absolute() and path.exists():
-        return _fix_wrec_path(path)
-    if path.is_absolute():
-        fixed = _fix_wrec_path(path)
-        if fixed.exists():
-            return fixed
-
-    # 2. Проверяем, является ли input_path числовым ID
-    is_numeric_id = bool(re.match(r'^\d+$', input_path))
-    if is_numeric_id and homedir:
-        from utils import resolve_id_to_mp4
-        found = resolve_id_to_mp4(input_path, homedir)
-        if found:
-            return found
-
-    # 3. Ищем в homedir по точному имени (как раньше)
-    if homedir:
-        home = Path(homedir)
-        if home.exists():
-            candidate = home / path.name
-            if candidate.exists():
-                return _fix_wrec_path(candidate)
-            for found in home.rglob(path.name):
-                return _fix_wrec_path(found)
-
-    # 4. Текущая директория
-    if path.exists():
-        return _fix_wrec_path(path)
-    cwd = Path.cwd()
-    candidate = cwd / path.name
-    if candidate.exists():
-        return _fix_wrec_path(candidate)
-
-    # 5. Если это ID и homedir не помог, возвращаем как есть (ошибка будет позже)
-    return _fix_wrec_path(path)
-
-
-def _fix_wrec_path(path: Path) -> Path:
-    path_str = str(path)
-    if 'wrec' in path.suffix.lower():
-        fixed_str = path_str.replace('wrec', '')
-        fixed = Path(fixed_str)
-        if fixed.exists():
-            return fixed
-    return path
-
-
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QStandardPaths, QCommandLineParser, QCommandLineOption, Qt
 from config.logger import setup_logging
 from config.config import load_config
 from index.idx_cache import cleanup_cache
+
 
 
 def global_exception_hook(exc_type, exc_value, exc_traceback):
@@ -172,10 +85,98 @@ def is_manager_running() -> bool:
     return False
 
 
+def resolve_media_path(input_path: str, homedir: str = "") -> Path:
+    """
+    Преобразует путь от Video Helper (.wrec, .mp4) или ID файла
+    в полный путь к MP4-файлу.
+    Если input_path состоит только из цифр, ищет файл ID_YYYYMMDD_HHMMSS.mp4 в homedir.
+    """
+    path = Path(input_path)
+    # 1. Абсолютный путь существует – сразу возвращаем
+    if path.is_absolute() and path.exists():
+        return _fix_wrec_path(path)
+    if path.is_absolute():
+        fixed = _fix_wrec_path(path)
+        if fixed.exists():
+            return fixed
+
+    # 2. Проверяем, является ли input_path числовым ID
+    is_numeric_id = bool(re.match(r'^\d+$', input_path))
+    if is_numeric_id and homedir:
+        from utils import resolve_id_to_mp4
+        found = resolve_id_to_mp4(input_path, homedir)
+        if found:
+            return found
+
+    # 3. Ищем в homedir по точному имени (как раньше)
+    if homedir:
+        home = Path(homedir)
+        if home.exists():
+            candidate = home / path.name
+            if candidate.exists():
+                return _fix_wrec_path(candidate)
+            for found in home.rglob(path.name):
+                return _fix_wrec_path(found)
+
+    # 4. Текущая директория
+    if path.exists():
+        return _fix_wrec_path(path)
+    cwd = Path.cwd()
+    candidate = cwd / path.name
+    if candidate.exists():
+        return _fix_wrec_path(candidate)
+
+    # 5. Если это ID и homedir не помог, возвращаем как есть (ошибка будет позже)
+    return _fix_wrec_path(path)
+
+
+def _fix_wrec_path(path: Path) -> Path:
+    path_str = str(path)
+    if 'wrec' in path.suffix.lower():
+        fixed_str = path_str.replace('wrec', '')
+        fixed = Path(fixed_str)
+        if fixed.exists():
+            return fixed
+    return path
+
+
 def main():
     # Устанавливаем перехватчик исключений для потоков
     threading.excepthook = thread_exception_hook
 
+    # ═══════════════════════════════════════════════════════════════
+    # Режим IndexService (без GUI)
+    # ═══════════════════════════════════════════════════════════════
+    if '--index-service' in sys.argv:
+        try:
+            idx_flag = sys.argv.index('--index-service')
+            args = sys.argv[idx_flag + 1:]
+            if len(args) < 1:
+                print("Usage: --index-service <idx_path> [poll_interval]")
+                sys.exit(1)
+            idx_path = Path(args[0])
+            poll_interval = float(args[1]) if len(args) > 1 else 10.0
+
+            if not getattr(sys, 'frozen', False):
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+            # QApplication уже импортирован глобально, используем его
+            app = QApplication(sys.argv)
+            app.setApplicationName("ProxyPlayerIndexService")
+
+            from index.index_service import IndexService
+            service = IndexService(str(idx_path), poll_interval)
+
+            import signal
+            signal.signal(signal.SIGINT, lambda sig, frame: service.stop())
+            signal.signal(signal.SIGTERM, lambda sig, frame: service.stop())
+
+            sys.exit(app.exec_())
+        except Exception as e:
+            print(f"Index service failed: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Обычный запуск
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("ProxyPlayer")

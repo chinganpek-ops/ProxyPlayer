@@ -7,6 +7,15 @@ AudioClock и синхронизация идут от звуковой карт
   а SeekEngine теперь создаёт отдельный ридер на каждый запрос (внутри).
 - seek_absolute принимает callback для уведомления GUI о завершении seek.
 - Конвейер не останавливается при seek (переключение буферов и окна без stop/start).
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью — скользящее окно для растущих файлов):
+- PlaybackEngine теперь создаётся с lazy_index=self._lazy_index. Без этой
+  ссылки PlaybackEngine._tick_window_management() был бы полностью
+  неактивен (гейт `if self._lazy_index is None: return`) — то есть окно
+  никогда бы не сдвигалось и метаданные никогда бы не обновлялись с диска,
+  как бы долго ни рос .idx. Единственное изменение в этом файле —
+  остальная инициализация, порядок компонентов и вся остальная логика
+  фасада не менялись.
 """
 
 import time
@@ -188,6 +197,9 @@ class StreamController:
             self._seek_engine = SeekEngine(self._lazy_index, self.decoder, None)
 
             # 9. Создаём PlaybackEngine (MasterClock будет передан позже)
+            # ПРАВКА: lazy_index=self._lazy_index — без этого PlaybackEngine
+            # не может отслеживать приближение к концу окна и обновлять
+            # метаданные с диска (см. PlaybackEngine._tick_window_management).
             self._playback = PlaybackEngine(
                 self._pipeline, self._seek_engine, self._sync_mgr,
                 None,          # master_clock пока None
@@ -195,6 +207,7 @@ class StreamController:
                 start_frame_offset=self.start_frame_offset,
                 total_frames=self.total_frames,
                 fps=self.fps,
+                lazy_index=self._lazy_index,
             )
 
             self._ready.set()

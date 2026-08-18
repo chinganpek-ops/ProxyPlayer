@@ -1,9 +1,28 @@
-#!/usr/bin/env python3
 """
 index_service.py – сервис индексирования для ProxyPlayer v1.
-Запускается как отдельный процесс менеджером.
-Единолично владеет зеркалом .idx, инкрементально обновляет его
-и уведомляет плееры о готовности новых данных через IPC.
+Запускается как отдельный процесс менеджером (ManagerWindow), по одному
+экземпляру на растущий .idx-файл. Единолично владеет зеркалом .idx,
+инкрементально обновляет его и уведомляет плееры о готовности новых данных
+через локальный IPC.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью):
+- Имя IPC-сервера больше не строится из os.getpid() текущего процесса —
+  раньше плеер физически не мог знать это имя заранее (PID неизвестен до
+  старта сервиса), поэтому подписка плеера на уведомления была невозможна.
+  Теперь имя детерминированно выводится из пути к .idx через
+  idx_cache.mirror_ipc_name() – та же функция, что уже используется для
+  имени файла зеркала, поэтому оба процесса (IndexService и плеер)
+  вычисляют одно и то же имя, зная только путь к .idx.
+- poll_interval по умолчанию поднят с 5.0 до 10.0 сек — под фактический
+  темп обновления исходного .idx (раз в 10-15 сек), чтобы не гонять диск
+  чаще, чем реально появляются новые данные.
+- _check_growth() больше не завершает процесс молча при разовой ошибке
+  (например, временная недоступность сетевого пути) — логирует и пробует
+  на следующем тике; растущий 8+ часовой файл не должен ронять сервис
+  из-за одиночного сбоя.
+
+Логика инкрементальной докачки зеркала (prepare_mirror/_sync_mirror в
+idx_cache.py) и уведомления клиентов не менялась.
 """
 
 import sys
@@ -24,6 +43,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("IndexService")
 
+# Темп обновления исходного .idx-файла на стороне записывающего процесса.
+# Раз в 10-15 сек появляются новые метаданные — поллим соразмерно, с запасом.
+DEFAULT_POLL_INTERVAL_SEC = 10.0
+
 
 class IndexService(QObject):
     """
@@ -32,10 +55,10 @@ class IndexService(QObject):
     """
 
     # Сигналы для внутреннего использования
-    mirror_ready = pyqtSignal(str)       # путь к зеркалу
-    mirror_updated = pyqtSignal(str, int) # путь, новый размер
+    mirror_ready = pyqtSignal(str)        # путь к зеркалу
+    mirror_updated = pyqtSignal(str, int)  # путь, новый размер
 
-    def __init__(self, idx_path: str, poll_interval: float = 5.0):
+    def __init__(self, idx_path: str, poll_interval: float = DEFAULT_POLL_INTERVAL_SEC):
         super().__init__()
         self.idx_path = Path(idx_path)
         self.poll_interval = poll_interval
@@ -77,6 +100,10 @@ class IndexService(QObject):
                 self.mirror_updated.emit(str(self._mirror_path), new_size)
                 self._notify_clients(str(self._mirror_path))
         except Exception as e:
+            # Не завершаем сервис из-за одиночного сбоя (например, временная
+            # недоступность сетевого пути) — на 8+ часовой сессии это иначе
+            # означало бы, что один сетевой затык навсегда останавливает
+            # обновление метаданных без явного сигнала об этом.
             logger.error(f"Ошибка проверки роста: {e}")
 
     # ------------------------------------------------------------------
@@ -84,10 +111,17 @@ class IndexService(QObject):
     # ------------------------------------------------------------------
     def _start_ipc_server(self):
         """Запускает локальный сервер для связи с плеерами."""
+        from index.idx_cache import mirror_ipc_name
         self._server = QLocalServer(self)
         self._server.newConnection.connect(self._on_new_ipc_connection)
-        server_name = f"ProxyPlayerIndexService_{os.getpid()}"
-        self._server.listen(server_name)
+        server_name = mirror_ipc_name(self.idx_path)
+        # На случай, если предыдущий процесс с этим именем не освободил
+        # канал корректно (падение/kill) — снимаем стейл-имя перед listen().
+        QLocalServer.removeServer(server_name)
+        if not self._server.listen(server_name):
+            logger.error(f"Не удалось запустить IPC-сервер {server_name}: "
+                         f"{self._server.errorString()}")
+            return
         logger.info(f"IPC-сервер запущен: {server_name}")
 
     def _on_new_ipc_connection(self):
@@ -95,6 +129,11 @@ class IndexService(QObject):
         if client:
             self._clients.append(client)
             client.disconnected.connect(lambda: self._cleanup_client(client))
+            # Клиент мог подключиться уже после первой синхронизации —
+            # сразу отдаём ему текущий путь к зеркалу, не дожидаясь роста.
+            if self._mirror_path is not None:
+                client.write(str(self._mirror_path).encode())
+                client.flush()
 
     def _notify_clients(self, mirror_path: str):
         """Отправляет путь к обновлённому зеркалу всем подключённым клиентам."""
@@ -136,7 +175,7 @@ def main():
         sys.exit(1)
 
     idx_path = sys.argv[1]
-    poll_interval = float(sys.argv[2]) if len(sys.argv) > 2 else 5.0
+    poll_interval = float(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_POLL_INTERVAL_SEC
 
     from PyQt5.QtWidgets import QApplication
     app = QApplication(sys.argv)
@@ -144,7 +183,7 @@ def main():
 
     service = IndexService(idx_path, poll_interval)
 
-    # Обработка Ctrl+C
+    # Обработка Ctrl+C / завершения от менеджера
     import signal
     signal.signal(signal.SIGINT, lambda sig, frame: service.stop())
     signal.signal(signal.SIGTERM, lambda sig, frame: service.stop())

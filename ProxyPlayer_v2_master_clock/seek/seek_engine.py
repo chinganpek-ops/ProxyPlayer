@@ -2,11 +2,24 @@
 seek_engine.py – асинхронный seek с отменой для ProxyPlayer v2.
 Оптимизирован для стабильной работы с одним воркер-потоком.
 
-Изменения:
+Изменения (исходные):
 - Один воркер-поток с очередью команд (никаких параллельных seek).
 - Новый запрос отменяет предыдущий, но не создаёт новый поток.
 - Каждый запрос использует свой WinSequentialReader (изолированные чтения).
 - Поддержка поколений: старые колбэки игнорируются.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью):
+- _seek_sync_internal(): переполнение буфера кадров seek-а (max_frames=300)
+  раньше сигнализировалось через request.cancel() — тот же механизм, что и
+  реальная отмена запроса новым seek. Из-за этого _process_seek() видел
+  request.is_cancelled=True и просто возвращался, ни разу не вызвав
+  on_complete()/on_error() — уже готовый и валидный результат seek терялся
+  молча. Теперь переполнение буфера обозначается отдельным локальным
+  флагом buffer_full, не трогающим состояние request. request.is_cancelled
+  теперь означает ровно то, для чего он существует — отмену новым seek.
+
+Остальная логика (бинарный поиск IDR, чтение диапазона, декодирование) не
+менялась.
 """
 
 import threading
@@ -206,6 +219,7 @@ class SeekEngine:
 
         buffer = FrameRingBuffer(max_frames=300)
         first_decode_error = None
+        buffer_full = False  # достижение предела буфера seek-а — НЕ отмена
 
         for i in range(local_idr, end_local + 1):
             if request.is_cancelled:
@@ -239,9 +253,13 @@ class SeekEngine:
                 for frame in frames:
                     pts = video_frame_to_pts(window.window_start_frame + i)
                     if not buffer.try_push(frame, pts):
-                        request.cancel()
+                        # Буфер seek-а физически заполнен (max_frames=300) —
+                        # это естественный предел, а не отмена запроса.
+                        # Результат остаётся валидным и должен быть отдан
+                        # вызывающему через on_complete().
+                        buffer_full = True
                         break
-                if request.is_cancelled:
+                if buffer_full:
                     break
             except Exception as e:
                 if first_decode_error is None:
