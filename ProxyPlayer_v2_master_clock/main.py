@@ -25,6 +25,8 @@ from config.logger import setup_logging
 from config.config import load_config
 from index.idx_cache import cleanup_cache
 
+# --- Мониторинг Seek ---
+from seek_monitor import install_seek_monitoring, attach_to_controller
 
 
 def global_exception_hook(exc_type, exc_value, exc_traceback):
@@ -247,6 +249,9 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("Запуск ProxyPlayer v2")
 
+    # --- Включаем мониторинг Seek ---
+    install_seek_monitoring()
+
     # --- Пустой аргумент или "." ---
     if not args or (len(args) == 1 and args[0] in ('', '.', './', '.\\')):
         if is_manager_running():
@@ -295,6 +300,9 @@ def main():
             try:
                 from player_window import PlayerWidget
                 widget = PlayerWidget(mp4_path, config, use_moov, mirror_path=mirror_path)
+                # --- Прикрепляем мониторинг к созданному контроллеру ---
+                if hasattr(widget, 'player'):
+                    attach_to_controller(widget.player)
                 widget.setWindowTitle(f"Player - {mp4_path.name}")
                 widget.show()
                 widget.send_hwnd_to_manager()

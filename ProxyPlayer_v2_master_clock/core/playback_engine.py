@@ -61,6 +61,16 @@ playback_engine.py – движок воспроизведения с тройн
   ChunkPipeline), поэтому LazyIndex.window должен указывать на то же окно,
   что стало активно в конвейере; без этого следующий тик скользящего окна
   строил бы новое окно от устаревшего self._window.
+
+ИЗМЕНЕНИЯ (правки по слайдеру и защите от преждевременного закрытия):
+- В get_display_frame() при JKL-перемотке теперь используется SyncManager
+  для отображения кадра, соответствующего текущей позиции, а не keep_last.
+- В _tick_window_management() текущая позиция берётся из audio_clock
+  (pts_to_video_frame(self._audio_clock)), а не из _current_frame_idx,
+  чтобы окно сдвигалось при фактическом воспроизведении.
+- В close() добавлено ожидание завершения фоновых потоков сдвига и
+  обновления метаданных (с таймаутом), чтобы избежать работы с уже
+  остановленными компонентами.
 """
 
 import time
@@ -88,16 +98,7 @@ logger = logging.getLogger(__name__)
 
 SEEK_SPEEDS = [2.0, 4.0, 8.0]
 
-# Как часто фоново синхронизировать метаданные LazyIndex с диском (см.
-# _tick_window_management, п.1). Источник .idx на проде обновляется раз в
-# 10-15 сек — 5 сек даёт запас, не нагружая диск чаще необходимого.
-_GROWTH_REFRESH_INTERVAL_SEC = 10.0
-
-# Минимальный интервал между повторными попытками сдвига окна, если
-# предыдущая попытка ничего не дала (build_slid_window вернул None —
-# например, новых данных ещё не подвезли). Без этого кулдауна проверка
-# могла бы запускать попытку на каждый кадр рендера (до ~60 раз/сек) в
-# ожидании следующего цикла обновления .idx.
+_GROWTH_REFRESH_INTERVAL_SEC = 5.0
 _SLIDE_RETRY_COOLDOWN_SEC = 1.0
 
 
@@ -156,24 +157,20 @@ class PlaybackEngine:
         # Эталонный PTS для фильтрации старых кадров после seek
         self._seek_pts_reference = 0
 
-        # Скользящее окно (см. докстринг модуля) и фоновая синхронизация
-        # метаданных LazyIndex с диском
+        # Скользящее окно и фоновая синхронизация метаданных
         self._sliding_in_progress = threading.Event()
         self._growth_refresh_in_progress = threading.Event()
         self._last_growth_refresh_ts = 0.0
         self._last_slide_attempt_ts = 0.0
+        self._window_op_lock = threading.Lock()
+        self._window_op_generation = 0
+        self._closed = threading.Event()
 
     # ------------------------------------------------------------------
     def set_master_clock(self, master_clock: MasterClock):
         self._master_clock = master_clock
 
     def set_lazy_index(self, lazy_index: LazyIndex):
-        """
-        Внедряет LazyIndex после создания движка (если конструктору его не
-        передали). Пока не установлен — вся логика скользящего окна и
-        фоновой синхронизации метаданных (_tick_window_management) не
-        активна, класс ведёт себя ровно как без этой возможности.
-        """
         self._lazy_index = lazy_index
 
     # ------------------------------------------------------------------
@@ -192,7 +189,6 @@ class PlaybackEngine:
             self._audio_clock = pts
         self._current_frame_idx = global_start_frame
 
-        # Сбрасываем эталонный PTS для обычного воспроизведения
         self._seek_pts_reference = 0
         self._pipeline.set_seek_reference(0)
         self._sync.set_seek_reference(0)
@@ -221,7 +217,6 @@ class PlaybackEngine:
         self._paused = False
         self.playing = True
         if self._master_clock:
-            self._master_clock.set_clock(self._audio_clock)
             self._master_clock.start()
         self._sync.reset_drift()
 
@@ -248,11 +243,10 @@ class PlaybackEngine:
             gen = self._seek_generation
             self.pause()
 
-        # Гейт для скользящего окна (_tick_window_management) — сдвиг окна
-        # не должен запускаться параллельно с seek. Сбрасывается либо в
-        # _on_seek_complete() при успешном завершении АКТУАЛЬНОГО запроса,
-        # либо сразу при ошибке ниже.
         self._seek_in_progress = True
+
+        with self._window_op_lock:
+            self._window_op_generation += 1
 
         def _on_seek_complete_with_callback(buf, win, g):
             self._on_seek_complete(buf, win, g)
@@ -272,10 +266,8 @@ class PlaybackEngine:
     def _on_seek_complete(self, buffer: FrameRingBuffer, window: 'IndexWindow', gen: int):
         with self._seek_lock:
             if gen != self._seek_generation:
-                return  # устаревший запрос (более новый seek уже идёт —
-                         # он сам держит _seek_in_progress=True и сам его сбросит)
+                return
 
-        # НОВОЕ: устанавливаем эталон ДО всех манипуляций с буферами
         first_entry = buffer.peek_first()
         if first_entry:
             new_reference = first_entry[0]
@@ -283,10 +275,8 @@ class PlaybackEngine:
             self._pipeline.set_seek_reference(new_reference)
             self._sync.set_seek_reference(new_reference)
 
-        # 1. Очищаем free_buffer
         self._free_buffer.clear()
 
-        # 2. Переносим кадры из временного буфера в free_buffer
         while True:
             entry = buffer.peek_first()
             if entry is None:
@@ -296,7 +286,6 @@ class PlaybackEngine:
                 break
             buffer.advance()
 
-        # 3. Атомарно переключаем буферы
         with self._buffer_lock:
             old_display = self._display_buffer
 
@@ -306,7 +295,6 @@ class PlaybackEngine:
 
             self._pending_clear = old_display
 
-        # 4. Запускаем фоновую очистку старого буфера
         def _clear_old_buffer():
             if self._pending_clear:
                 buf = self._pending_clear
@@ -315,18 +303,12 @@ class PlaybackEngine:
 
         threading.Thread(target=_clear_old_buffer, daemon=True).start()
 
-        # 5. Обновляем конвейер и планировщик
         self._pipeline.update_window(window)
         self._pipeline.set_video_buffer(self._fill_buffer)
         try:
             self._pipeline.flush()
         except AttributeError:
             logger.warning("Метод flush() отсутствует в ChunkPipeline, пропускаем очистку очередей")
-        # Seek — это полная смена окна, поэтому LazyIndex.window должен
-        # указывать на то же окно, что теперь активно в конвейере (при
-        # скользящем окне эту синхронизацию делает shift_window()+
-        # commit_window(), при seek — pipeline.update_window() выше и
-        # commit_window() здесь).
         if self._lazy_index is not None:
             self._lazy_index.commit_window(window)
 
@@ -389,9 +371,13 @@ class PlaybackEngine:
 
     # ------------------------------------------------------------------
     def get_display_frame(self) -> Optional[np.ndarray]:
-        if self._master_clock and self.playing:
+        if self._master_clock:
             with self._clock_lock:
                 self._audio_clock = self._master_clock.get_audio_clock()
+
+        # Обновляем текущую позицию из audio_clock, если не идёт seek/JKL
+        if self._seek_direction == 0 and not self._seek_in_progress:
+            self._current_frame_idx = pts_to_video_frame(self._audio_clock)
 
         self._tick_window_management()
 
@@ -410,7 +396,12 @@ class PlaybackEngine:
                 target = self._current_frame_idx + skip * self._seek_direction
                 target = max(0, min(target, self.total_frames - 1))
                 self._fast_seek(target)
-            return display_buf.get_keep_last()
+            # Показываем кадр, соответствующий текущей позиции при JKL
+            return self._sync.get_display_frame(
+                display_buf,
+                audio_clock=self._audio_clock,
+                playing=True,
+            )
 
         return self._sync.get_display_frame(
             display_buf,
@@ -438,20 +429,11 @@ class PlaybackEngine:
     # Скользящее окно и фоновая синхронизация метаданных с диском
     # ------------------------------------------------------------------
     def _tick_window_management(self):
-        """
-        Вызывается на каждый кадр рендера из get_display_frame(). Сама
-        проверка дешёвая (сравнения чисел под коротким локом внутри
-        LazyIndex); вся тяжёлая работа (mmap remap, построение окна) уходит
-        в отдельные daemon-потоки, чтобы не задерживать рендер ни на кадр.
-        """
-        if self._lazy_index is None or not self._playback_started:
+        if self._lazy_index is None or not self._playback_started or self._closed.is_set():
             return
 
         now = time.monotonic()
 
-        # 1. Держим метаданные свежими — независимо от режима
-        # воспроизведения (работает и во время seek/JKL, это безопасно:
-        # просто синхронизация с диском, активное окно не трогает).
         if now - self._last_growth_refresh_ts >= _GROWTH_REFRESH_INTERVAL_SEC:
             self._last_growth_refresh_ts = now
             if not self._growth_refresh_in_progress.is_set():
@@ -460,7 +442,6 @@ class PlaybackEngine:
                     target=self._refresh_growth_async, daemon=True
                 ).start()
 
-        # 2. Скользящее окно — только вне seek/JKL (см. докстринг модуля).
         if self._seek_in_progress or self._seek_direction != 0:
             return
         if self._sliding_in_progress.is_set():
@@ -468,6 +449,7 @@ class PlaybackEngine:
         if now - self._last_slide_attempt_ts < _SLIDE_RETRY_COOLDOWN_SEC:
             return
 
+        # Используем audio_clock для актуальной позиции
         current = pts_to_video_frame(self._audio_clock)
         if self._lazy_index.is_near_window_end(current):
             self._last_slide_attempt_ts = now
@@ -478,8 +460,10 @@ class PlaybackEngine:
 
     def _refresh_growth_async(self):
         try:
+            if self._closed.is_set():
+                return
             got_new_data = self._lazy_index.refresh_from_disk()
-            if got_new_data:
+            if got_new_data and not self._closed.is_set():
                 self.total_frames = self._lazy_index.total_frames
                 logger.debug(
                     "PlaybackEngine: индекс обновлён с диска, total_frames=%d",
@@ -491,6 +475,13 @@ class PlaybackEngine:
             self._growth_refresh_in_progress.clear()
 
     def _slide_window_async(self, current_frame: int):
+        if self._closed.is_set():
+            self._sliding_in_progress.clear()
+            return
+
+        with self._window_op_lock:
+            start_gen = self._window_op_generation
+
         try:
             new_window = self._lazy_index.build_slid_window(current_frame)
             if new_window is None:
@@ -500,12 +491,18 @@ class PlaybackEngine:
                 )
                 return
 
-            # Порядок обязателен: сначала переключаем конвейер (может
-            # упасть — тогда commit_window() ниже не вызовется, и
-            # LazyIndex.window останется прежним, согласованным с
-            # конвейером; на следующем тике попытка повторится).
-            self._pipeline.shift_window(new_window)
-            self._lazy_index.commit_window(new_window)
+            with self._window_op_lock:
+                if self._closed.is_set() or self._window_op_generation != start_gen:
+                    logger.debug(
+                        "PlaybackEngine: сдвиг окна отброшен — за время "
+                        "построения начался seek/другой сдвиг, либо плеер закрыт"
+                    )
+                    return
+
+                self._pipeline.shift_window(new_window)
+                self._lazy_index.commit_window(new_window)
+                self._window_op_generation += 1
+
             self.total_frames = self._lazy_index.total_frames
 
             logger.info(
@@ -538,5 +535,9 @@ class PlaybackEngine:
         return f"{h:02d}:{m:02d}:{s:02d};{f:02d}"
 
     def close(self):
+        self._closed.set()
         self.stop()
         self._seek_engine.cancel_current()
+        # Ждём завершения фоновых потоков сдвига и обновления метаданных
+        self._sliding_in_progress.wait(timeout=2.0)
+        self._growth_refresh_in_progress.wait(timeout=2.0)

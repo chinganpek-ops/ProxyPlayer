@@ -16,6 +16,21 @@ idx_cache.py – локальный кэш индекса (.idx) с поддер
   IPC-канала (QLocalServer/QLocalSocket) между IndexService и плеерами —
   так плееру не нужно знать PID процесса IndexService заранее, оба процесса
   вычисляют одно и то же имя из пути к .idx.
+- НОВОЕ: remap_idx_incremental() + внутренняя _scan_markers(start_element).
+  Раньше open_idx_mmap()/remap_idx() всегда сканировали весь файл заново
+  (np.where по ВСЕМУ u4-массиву) — для растущего 8+ часового файла это
+  означало, что каждый периодический опрос (LazyIndex.refresh_from_disk(),
+  раз в 5 сек) пересканировал уже давно обработанные мегабайты, становясь
+  дороже по мере роста файла. Для append-only роста (новые записи только
+  дописываются в конец, старые байты не меняются — как в вашем случае)
+  это лишняя работа: всё, что уже нашли и провалидировали, остаётся
+  валидным навсегда. _scan_markers(start_element) теперь сканирует только
+  window = arr_u4[start_element:] и возвращает next_start_element для
+  следующего вызова (с запасом в 16 последних элементов — кандидат-маркер
+  мог быть отброшен не по содержимому, а просто из-за нехватки данных на
+  момент скана). open_idx_mmap()/remap_idx() поведение не изменили
+  (полный скан с 0, тот же 2-tuple) — используются при первом открытии и
+  как аварийный откат.
 - Логика открытия/докачки/mmap не менялась.
 """
 
@@ -131,7 +146,8 @@ def _sync_mirror(reader: WinSequentialReader, mirror_path: Path, remote_size: in
     to_read = remote_size - start_read
     logger.info(f"Докачка зеркала: с {start_read} байт, объём {to_read} байт")
 
-    raw_data = reader.read_sequential(start_read, to_read)
+    reader.seek(start_read)
+    raw_data = reader.read(to_read)
     if not raw_data:
         logger.error("Не удалось прочитать данные для обновления зеркала")
         return local_size
@@ -178,7 +194,7 @@ def prepare_mirror(idx_path: Path) -> Path:
         local_size = mirror_path.stat().st_size if mirror_path.exists() else 0
         if local_size < cur_size:
             try:
-                reader = WinSequentialReader(idx_path, rate_limit=0, overlapped=False)
+                reader = WinSequentialReader(idx_path)
                 local_size = _sync_mirror(reader, mirror_path, cur_size, local_size)
                 reader.close()
             except Exception as e:
@@ -197,10 +213,29 @@ def get_mirror_path(idx_path: Path) -> Path:
 # ------------------------------------------------------------------
 # mmap-функции (используются всеми)
 # ------------------------------------------------------------------
-def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+
+# Сколько последних элементов u4-массива всегда пересканируются заново.
+# Кандидат-маркер, найденный в последних 16 элементах предыдущего скана,
+# мог быть отброшен не по содержимому, а просто из-за нехватки данных
+# (записи 17 x uint32, и cand+17 могло выходить за длину массива на тот
+# момент) — такие кандидаты должны быть пересмотрены, когда файл подрастёт.
+_SCAN_RETRY_TAIL_ELEMENTS = 16
+
+
+def _scan_markers(mirror_path: Path, start_element: int = 0) -> Tuple[np.ndarray, np.ndarray, int]:
     """
-    Отображает локальное зеркало .idx в память через mmap.
-    Возвращает структурированные массивы (mm_193, mm_c9) для записей 0x193 и 0xC9.
+    Открывает mmap зеркала и ищет маркеры 0x193/0xC9 начиная с элемента
+    start_element u4-массива (payload после сигнатуры начала данных).
+
+    start_element=0 — полный скан (используется при первом открытии).
+    start_element>0 — инкрементальный скан: возвращает ТОЛЬКО новые
+    записи, найденные в добавленном хвосте с прошлого вызова. Корректен
+    только для append-only файлов, где старые байты никогда не меняются
+    (иначе см. LazyIndex._full_rescan — аварийный откат на полный скан).
+
+    Возвращает (mm_193_new, mm_c9_new, next_start_element).
+    next_start_element нужно сохранить и передать как start_element в
+    следующий вызов, чтобы продолжить дочтение с этого места.
     """
     # Закрываем предыдущий mmap для этого пути, если есть
     with _mmap_cache_lock:
@@ -235,33 +270,55 @@ def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
             offset=data_start
         )
 
-        # --- Построение mm_193 ---
-        cand_193 = np.where(arr_u4 == 0x193)[0]
-        cand_193 = cand_193[cand_193 + 17 <= len(arr_u4)]
-        valid_193 = cand_193[(arr_u4[cand_193 + 1] > 0) & (arr_u4[cand_193 + 2] < 256) & (arr_u4[cand_193 + 7] <= 31)]
+        total_elements = len(arr_u4)
+        # Если файл вдруг оказался короче, чем то, что мы уже
+        # просканировали (пересоздание/усечение вместо чистого роста) —
+        # это не наш случай для инкремента; сигнализируем вызывающему
+        # через next_start_element < start_element, он решит, что делать
+        # (см. LazyIndex.refresh_from_disk / _full_rescan).
+        search_start = max(0, min(start_element, total_elements))
 
-        if len(valid_193) == 0:
+        if search_start >= total_elements:
             mm_193 = np.empty(0, dtype=DTYPE_193)
-        else:
-            indices = valid_193[:, None] + np.arange(17)
-            mm_193 = arr_u4[indices].copy().view(DTYPE_193).ravel()
-
-        # --- Построение mm_c9 ---
-        cand_c9 = np.where(arr_u4 == 0xC9)[0]
-        cand_c9 = cand_c9[cand_c9 + 17 <= len(arr_u4)]
-        valid_c9 = cand_c9[arr_u4[cand_c9 + 1] > 0]
-
-        if len(valid_c9) == 0:
             mm_c9 = np.empty(0, dtype=DTYPE_C9)
         else:
-            indices = valid_c9[:, None] + np.arange(17)
-            mm_c9 = arr_u4[indices].copy().view(DTYPE_C9).ravel()
+            # ВАЖНО: скан только по НОВОМУ хвосту (window), а не по всему
+            # arr_u4 — именно это убирает O(n) полное пересканирование на
+            # каждый вызов при растущем файле.
+            window = arr_u4[search_start:]
+
+            # --- 0x193 ---
+            cand_193 = np.where(window == 0x193)[0]
+            cand_193 = cand_193[cand_193 + 17 <= len(window)]
+            valid_193 = cand_193[
+                (window[cand_193 + 1] > 0) & (window[cand_193 + 2] < 256) & (window[cand_193 + 7] <= 31)
+            ]
+            if len(valid_193) == 0:
+                mm_193 = np.empty(0, dtype=DTYPE_193)
+            else:
+                indices = valid_193[:, None] + np.arange(17)
+                mm_193 = window[indices].view(DTYPE_193).ravel()  # fancy-индексация уже копирует
+
+            # --- 0xC9 ---
+            cand_c9 = np.where(window == 0xC9)[0]
+            cand_c9 = cand_c9[cand_c9 + 17 <= len(window)]
+            valid_c9 = cand_c9[window[cand_c9 + 1] > 0]
+            if len(valid_c9) == 0:
+                mm_c9 = np.empty(0, dtype=DTYPE_C9)
+            else:
+                indices = valid_c9[:, None] + np.arange(17)
+                mm_c9 = window[indices].view(DTYPE_C9).ravel()
 
         with _mmap_cache_lock:
             _mmap_cache[mirror_path] = mm
 
-        logger.info(f"mmap открыт для {mirror_path.name}: 193={len(mm_193)}, C9={len(mm_c9)}")
-        return mm_193.copy(), mm_c9.copy()
+        next_start_element = max(search_start, total_elements - _SCAN_RETRY_TAIL_ELEMENTS)
+
+        logger.info(
+            f"idx просканирован для {mirror_path.name} (с элемента {search_start}): "
+            f"новых 193={len(mm_193)}, новых C9={len(mm_c9)}, всего элементов={total_elements}"
+        )
+        return mm_193, mm_c9, next_start_element
 
     except Exception:
         f.close()
@@ -270,16 +327,46 @@ def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
         f.close()
 
 
+def open_idx_mmap(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Отображает локальное зеркало .idx в память через mmap и делает полный
+    скан. Возвращает структурированные массивы (mm_193, mm_c9) для всех
+    записей 0x193 и 0xC9. Используется при первом открытии — для
+    последующих обновлений растущего файла см. remap_idx_incremental().
+    """
+    mm_193, mm_c9, _next = _scan_markers(mirror_path, start_element=0)
+    return mm_193, mm_c9
+
+
 def remap_idx(mirror_path: Path) -> Tuple[np.ndarray, np.ndarray]:
-    """Переоткрывает mmap для зеркала (используется при росте файла)."""
-    with _mmap_cache_lock:
-        if mirror_path in _mmap_cache:
-            old_mmap = _mmap_cache.pop(mirror_path)
-            try:
-                old_mmap.close()
-            except Exception:
-                pass
-    return open_idx_mmap(mirror_path)
+    """
+    Полный пересчёт индекса с нуля (переоткрывает mmap и сканирует весь
+    файл заново). Дорогая операция для большого растущего файла — для
+    обычного периодического обновления используйте remap_idx_incremental().
+    Оставлен как аварийный откат (см. LazyIndex._full_rescan) и для любых
+    сценариев, где нужен гарантированно полный пересчёт.
+    """
+    mm_193, mm_c9, _next = _scan_markers(mirror_path, start_element=0)
+    return mm_193, mm_c9
+
+
+def remap_idx_incremental(mirror_path: Path, start_element: int) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    Дочитывает ТОЛЬКО новые записи, появившиеся в зеркале после
+    start_element (номер элемента u4-массива, возвращённый предыдущим
+    вызовом этой же функции или open_idx_mmap-эквивалента).
+
+    Корректно только для append-only роста (старые байты не меняются,
+    новые дописываются в конец) — именно так, как описан рост .idx в
+    вашем случае: сначала 12 видео-записей, затем аудио к ним, и так
+    далее, монотонно в конец файла.
+
+    Возвращает (new_193, new_c9, next_start_element). Если
+    next_start_element < start_element — файл стал короче, чем ожидалось
+    (похоже на пересоздание/усечение, а не на чистый рост); вызывающий
+    должен в этом случае откатиться на полный пересчёт (remap_idx).
+    """
+    return _scan_markers(mirror_path, start_element=start_element)
 
 
 # ------------------------------------------------------------------

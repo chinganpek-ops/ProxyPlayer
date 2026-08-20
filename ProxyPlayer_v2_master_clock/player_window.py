@@ -30,6 +30,12 @@ player_window.py – главное окно плеера и менеджер о
   --moov/--index-builder), а не прямым вызовом отдельного скрипта — так
   сохраняется совместимость с frozen-сборкой, где нет отдельных .py
   файлов, есть только один exe с диспетчеризацией по флагам.
+- Добавлены правки по слайдеру: синхронизация при старте, защита от
+  прыжков при перетаскивании, мгновенное обновление после seek, превью
+  кадра при перемещении внутри окна и заглушка при выходе за его пределы.
+- Добавлена защита от преждевременного закрытия: сигнал _seek_completed
+  доставляет завершение seek в GUI-поток, в closeEvent сбрасывается флаг
+  _seek_in_progress перед закрытием плеера.
 """
 
 import sys
@@ -87,9 +93,6 @@ ROWS = 2
 MAX_PLAYERS = COLS * ROWS
 
 # Темп опроса исходного .idx сервисом IndexService по умолчанию (сек).
-# Совпадает со значением по умолчанию в index_service.py — держим здесь
-# отдельной константой, чтобы её можно было переопределить через config
-# ('index_poll_interval_sec'), не трогая сам index_service.py.
 DEFAULT_INDEX_POLL_INTERVAL_SEC = 10.0
 
 
@@ -110,6 +113,8 @@ class OpenPlayerWorker(QThread):
 
 
 class PlayerWidget(QWidget):
+    _seek_completed = pyqtSignal(int)
+
     def __init__(self, mp4_path: Path, config: dict, use_moov: bool = False, 
                  mirror_path: str = None, parent=None):
         super().__init__(parent)
@@ -118,9 +123,10 @@ class PlayerWidget(QWidget):
         self.config = config
         self.mirror_path = mirror_path
         self._playback_started = False
-        self._seek_pending = False          # true, если слайдер был отпущен и ждём Play
-        self._seeking = False               # true, пока асинхронный seek не завершён
-        self._seek_generation = 0           # увеличивается при каждом новом seek
+        self._seek_pending = False
+        self._seeking = False
+        self._seek_generation = 0
+        self._closed = False
 
         self.setStyleSheet("""
             background-color: #2b2b2b;
@@ -151,6 +157,7 @@ class PlayerWidget(QWidget):
         self.player = self._create_controller()
         self._active_player = self.player
         self._init_ui()
+        self._seek_completed.connect(self._on_seek_completed_gui)
 
         self._updating_tracks = True
         for tid, action in self.track_actions.items():
@@ -291,20 +298,28 @@ class PlayerWidget(QWidget):
         self._seek_generation += 1
         gen = self._seek_generation
         self._seeking = True
-        self._seek_pending = True   # после перемотки всегда пауза, ждём Play
+        self._seek_pending = True
 
         def on_seek_done():
             if gen != self._seek_generation:
-                return             # устаревший запрос – ничего не делаем
-            self._seeking = False
-            self._seek_pending = False
-            self._update_frame()
-            self._sync_slider_to_playback()
-            self._update_tc_label()
-            self.video_widget.hide_placeholder()
-            self.video_widget.update()
+                return
+            if self._closed or not self.isVisible():
+                # Если окно уже закрыто, не эмитим сигнал
+                return
+            self._seek_completed.emit(gen)
 
         self.player.seek_absolute(frame_idx, callback=on_seek_done)
+
+    def _on_seek_completed_gui(self, gen: int):
+        """Выполняется на GUI-потоке."""
+        if gen != self._seek_generation:
+            return
+        self._seeking = False
+        self._seek_pending = False
+        self._update_frame()
+        self._sync_slider_to_playback()  # мгновенная синхронизация слайдера
+        self.video_widget.hide_placeholder()
+        self.video_widget.update()
 
     # ------------------------------------------------------------------
     # Обработчики кнопок
@@ -318,6 +333,14 @@ class PlayerWidget(QWidget):
 
     def _on_slider_moved(self, value):
         self._show_tc_for_frame(value)
+        # Превью кадра при перетаскивании: если внутри окна — показываем
+        # ближайший кадр из буфера, если за пределами — заглушку.
+        if self._is_frame_in_window(value):
+            frame = self._get_frame_for_slider_value(value)
+            if frame is not None:
+                self.video_widget.set_frame(frame)
+        else:
+            self.video_widget.show_placeholder()
 
     def _on_slider_released(self):
         self._start_seek(self.slider.value())
@@ -356,7 +379,7 @@ class PlayerWidget(QWidget):
 
     def _toggle_play_pause(self):
         if self._seeking:
-            return   # идёт перемотка, play/pause недоступен
+            return
         if self._seek_pending:
             self._seek_pending = False
         self._active_player.toggle_pause()
@@ -398,6 +421,51 @@ class PlayerWidget(QWidget):
         fps = self.config.get('fps', 25.0)
         self.render_timer.setInterval(int(1000.0 / fps))
 
+    def _sync_slider_to_playback(self):
+        """Устанавливает слайдер на фактическую позицию воспроизведения."""
+        if not isinstance(self._active_player, StreamController):
+            return
+        try:
+            current_frame = pts_to_video_frame(self.player.audio_clock)
+            total = self.player.total_frames
+            if total > 1:
+                max_slider = total - 1
+                if not self.player._finalized:
+                    max_slider = max(0, total - 1600)
+                self.slider.setRange(0, max_slider)
+                self.slider.setValue(current_frame)
+        except Exception as e:
+            logger.debug(f"Не удалось синхронизировать слайдер: {e}")
+
+    def _is_frame_in_window(self, frame_idx: int) -> bool:
+        try:
+            if not isinstance(self._active_player, StreamController):
+                return False
+            window = self._active_player._playback._lazy_index.window
+            return window is not None and window.contains_frame(frame_idx)
+        except Exception:
+            return False
+
+    def _get_frame_for_slider_value(self, value: int):
+        """Возвращает ближайший кадр из буфера для позиции слайдера."""
+        try:
+            display_buf = self._active_player._playback._display_buffer
+            target_pts = value * 1920  # SAMPLES_PER_VIDEO_FRAME
+            all_frames = display_buf.peek_all()
+            if not all_frames:
+                return None
+            best_frame = None
+            best_diff = float('inf')
+            for pts, frame in all_frames:
+                diff = abs(pts - target_pts)
+                if diff < best_diff:
+                    best_diff = diff
+                    best_frame = frame
+            return best_frame
+        except Exception as e:
+            logger.debug(f"Не удалось получить кадр для слайдера: {e}")
+            return None
+
     def _update_frame(self):
         try:
             if self._seeking:
@@ -414,8 +482,10 @@ class PlayerWidget(QWidget):
                 if total > 1:
                     max_slider = total - 1
                     if not self.player._finalized: max_slider = max(0, total - 1600)
-                    if self.slider.maximum() != max_slider: self.slider.setRange(0, max_slider)
-                if self._active_player.playing:
+                    if self.slider.maximum() != max_slider:
+                        self.slider.setRange(0, max_slider)
+                # Обновляем только если слайдер не захвачен пользователем
+                if self._active_player.playing and not self.slider.isSliderDown():
                     self.slider.blockSignals(True)
                     self.slider.setValue(frame_idx)
                     self.slider.blockSignals(False)
@@ -433,22 +503,6 @@ class PlayerWidget(QWidget):
         else: tc = self._active_player.get_real_timecode_str()
         self.tc_label.setText(tc)
         if not self.tc_input.hasFocus(): self.tc_input.setText(tc)
-
-    def _sync_slider_to_playback(self):
-        """Устанавливает слайдер на фактическую позицию воспроизведения."""
-        if not isinstance(self._active_player, StreamController):
-            return
-        try:
-            current_frame = pts_to_video_frame(self.player.audio_clock)
-            total = self.player.total_frames
-            if total > 1:
-                max_slider = total - 1
-                if not self.player._finalized:
-                    max_slider = max(0, total - 1600)
-                self.slider.setRange(0, max_slider)
-                self.slider.setValue(current_frame)
-        except Exception as e:
-            logger.debug(f"Не удалось синхронизировать слайдер: {e}")    
 
     def _show_tc_for_frame(self, frame_idx):
         total_seconds = frame_idx / self.player.fps
@@ -520,8 +574,7 @@ class PlayerWidget(QWidget):
         self._seek_pending = False
         try:
             self.player.start_playback()
-            self._sync_slider_to_playback()
-            self._update_tc_label()
+            self._sync_slider_to_playback()  # слайдер сразу на актуальный кадр
             if not self.render_timer.isActive():
                 self.render_timer.start()
             self.video_widget.hide_placeholder()
@@ -546,6 +599,10 @@ class PlayerWidget(QWidget):
         else: super().keyPressEvent(event)
 
     def closeEvent(self, event):
+        self._closed = True
+        # Отменяем активный seek, чтобы фоновый воркер не продолжил работу
+        if hasattr(self, 'player') and self.player and hasattr(self.player, '_playback') and self.player._playback:
+            self.player._playback._seek_in_progress = False
         if hasattr(self, 'render_timer') and self.render_timer is not None:
             self.render_timer.stop(); self.render_timer.deleteLater(); self.render_timer = None
         if hasattr(self, 'video_widget') and self.video_widget is not None:
@@ -586,10 +643,9 @@ class ManagerWindow(QMainWindow):
         self.config = config
         self.use_moov = use_moov
         self.processes = []; self.hwnd_positions = {}; self._closing = False
-        # ПРАВКА: один процесс IndexService на ФАЙЛ (ключ — resolved-путь
-        # к .idx), а не один общий процесс на всё приложение — см. докстринг
-        # модуля и _ensure_index_service() ниже.
+        # Один процесс IndexService на файл, с рефкаунтом.
         self._index_services = {}
+        self._index_service_refcount = {}
         self._last_worker = None
         self.setWindowTitle("ProxyPlayer v2 – Panel")
         self.setStyleSheet("background-color: #2b2b2b;")
@@ -626,8 +682,7 @@ class ManagerWindow(QMainWindow):
             try:
                 idx = self._find_idx_for(mp4_path)
                 mirror = prepare_mirror(idx)
-                self._ensure_index_service(idx)
-                self._add_player(mp4_path, use_moov, mirror_path=str(mirror))
+                self._add_player(mp4_path, use_moov, mirror_path=str(mirror), idx_path=idx)
             except Exception as e:
                 logger.error(f"Не удалось подготовить зеркало: {e}")
         QTimer.singleShot(2000, self._force_place_first_player)
@@ -639,20 +694,9 @@ class ManagerWindow(QMainWindow):
         return idx
 
     def _ensure_index_service(self, idx_path: Path):
-        """
-        Запускает IndexService для указанного .idx, если для него ещё нет
-        живого процесса. Один процесс IndexService обслуживает один .idx —
-        если несколько окон плеера открывают один и тот же растущий файл,
-        все они делят один и тот же процесс и одно и то же зеркало (см.
-        idx_cache.py: "Единое зеркало для всех процессов").
-
-        Процесс живёт всё время работы ManagerWindow и останавливается
-        только в _stop_all() — закрытие одного отдельного окна плеера НЕ
-        останавливает IndexService: он дешёвый (поллинг раз в
-        poll_interval + IPC-уведомления), а привязывать его жизненный цикл
-        к отдельным окнам добавило бы гонки без реальной пользы.
-        """
         key = str(idx_path.resolve())
+        self._index_service_refcount[key] = self._index_service_refcount.get(key, 0) + 1
+
         existing = self._index_services.get(key)
         if existing is not None and existing.state() == QProcess.Running:
             return
@@ -672,9 +716,23 @@ class ManagerWindow(QMainWindow):
         self._index_services[key] = proc
         logger.info("IndexService запущен для %s (poll_interval=%.1f с)", idx_path, poll_interval)
 
+    def _release_index_service(self, idx_path: Path):
+        key = str(idx_path.resolve())
+        if key not in self._index_service_refcount:
+            return
+        self._index_service_refcount[key] -= 1
+        if self._index_service_refcount[key] > 0:
+            return
+
+        self._index_service_refcount.pop(key, None)
+        proc = self._index_services.pop(key, None)
+        if proc is not None:
+            proc.terminate()
+            if not proc.waitForFinished(1000):
+                proc.kill()
+            logger.info("IndexService для %s остановлен (закрыто последнее окно)", key)
+
     def _on_index_service_finished(self, key: str, exit_code: int, exit_status):
-        # self._closing=True означает штатное завершение работы приложения
-        # (см. _stop_all) — тогда предупреждение избыточно.
         if key in self._index_services and not self._closing:
             logger.warning(
                 "IndexService для %s неожиданно завершился (code=%d) — "
@@ -682,6 +740,7 @@ class ManagerWindow(QMainWindow):
                 "перезапуска плеера", key, exit_code,
             )
         self._index_services.pop(key, None)
+        self._index_service_refcount.pop(key, None)
 
     def _force_place_first_player(self):
         if not self.hwnd_positions and self.processes:
@@ -696,11 +755,14 @@ class ManagerWindow(QMainWindow):
                 win32gui.EnumWindows(callback, hwnds)
                 if hwnds: self._place_new_player(hwnds[0])
 
-    def _add_player(self, mp4_path, use_moov, mirror_path=None):
+    def _add_player(self, mp4_path, use_moov, mirror_path=None, idx_path=None):
         if len(self.processes) >= MAX_PLAYERS:
             QMessageBox.warning(self, "Ограничение", f"Нельзя открыть больше {MAX_PLAYERS} окон плееров.")
             return
+        if idx_path is not None:
+            self._ensure_index_service(idx_path)
         proc = ManagedProcess(mp4_path, self.config, use_moov, mirror_path=mirror_path, parent=self)
+        proc.idx_path = idx_path
         proc.process.finished.connect(lambda: self._on_player_closed(proc))
         self.processes.append(proc)
 
@@ -778,8 +840,7 @@ class ManagerWindow(QMainWindow):
             return
         try:
             mirror = prepare_mirror(idx)
-            self._ensure_index_service(idx)
-            self._add_player(mp4_path, use_moov=False, mirror_path=str(mirror))
+            self._add_player(mp4_path, use_moov=False, mirror_path=str(mirror), idx_path=idx)
         except Exception as e:
             logger.error(f"Ошибка подготовки зеркала: {e}")
 
@@ -819,6 +880,9 @@ class ManagerWindow(QMainWindow):
 
     def _on_player_closed(self, proc):
         if proc in self.processes: self.processes.remove(proc)
+        idx_path = getattr(proc, 'idx_path', None)
+        if idx_path is not None:
+            self._release_index_service(idx_path)
         self._cleanup_hwnd_positions()
 
     def _cleanup_hwnd_positions(self):
@@ -860,6 +924,7 @@ class ManagerWindow(QMainWindow):
                 if not proc.waitForFinished(1000):
                     proc.kill()
             self._index_services.clear()
+            self._index_service_refcount.clear()
             for proc in self.processes:
                 if hasattr(proc, 'close'): proc.close()
             self.tray_icon.hide()

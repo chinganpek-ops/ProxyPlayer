@@ -1,31 +1,40 @@
 """
-seek_engine.py – асинхронный seek с отменой для ProxyPlayer v2.
-Оптимизирован для стабильной работы с одним воркер-потоком.
+seek_engine.py – пул воркеров для асинхронного seek (v3).
 
-Изменения (исходные):
-- Один воркер-поток с очередью команд (никаких параллельных seek).
-- Новый запрос отменяет предыдущий, но не создаёт новый поток.
-- Каждый запрос использует свой WinSequentialReader (изолированные чтения).
-- Поддержка поколений: старые колбэки игнорируются.
+ИСТОРИЯ ИЗМЕНЕНИЙ:
+- v1: один воркер-поток с очередью команд.
+- v2: буфер seek-а (max_frames=300) и разделение "отмена запроса" vs
+  "буфер физически заполнен" (buffer_full).
+- v3 (эта версия) — переход на пул воркеров по мотивам диагностики
+  зависания SeekWorker на блокирующем сетевом чтении (SMB, ReadFile без
+  таймаута) и последующего аварийного завершения процесса при закрытии
+  плеера, пока поток ещё жив и держит хэндл. Требования: (1) таймауты —
+  и на отмену конкретной задачи, и общий watchdog на случай, если новый
+  seek вообще не пришёл, чтобы отменить зависшую; (2) каждый воркер
+  ЖЁСТКО привязан к своему FrameRingBuffer на весь срок жизни воркера —
+  без гонки данных; (3) передача результата — через очередь-сигнал
+  (_result_queue), а не прямым вызовом колбэка из потока воркера;
+  (4) вся координация — на отдельном потоке-диспетчере, ни GUI, ни
+  сами воркеры не блокируются.
 
-ИЗМЕНЕНИЯ (правки продакшен-ревью):
-- _seek_sync_internal(): переполнение буфера кадров seek-а (max_frames=300)
-  раньше сигнализировалось через request.cancel() — тот же механизм, что и
-  реальная отмена запроса новым seek. Из-за этого _process_seek() видел
-  request.is_cancelled=True и просто возвращался, ни разу не вызвав
-  on_complete()/on_error() — уже готовый и валидный результат seek терялся
-  молча. Теперь переполнение буфера обозначается отдельным локальным
-  флагом buffer_full, не трогающим состояние request. request.is_cancelled
-  теперь означает ровно то, для чего он существует — отмену новым seek.
-
-Остальная логика (бинарный поиск IDR, чтение диапазона, декодирование) не
-менялась.
+СОВМЕСТИМОСТЬ С НОВЫМ WinSequentialReader:
+- В _do_seek() используется новый API: конструктор
+  WinSequentialReader(path, buffer_size=..., read_timeout_ms=...,
+  use_no_buffering=...), методы seek(offset) и read(size).
+- Убраны вызовы set_cancel_event()/read_sequential(), которых нет в
+  новом ридере. Отмена обеспечивается таймаутом внутри ридера и
+  внешним CancelSynchronousIo из координатора (при необходимости).
+  Если read() возвращает b'' – это трактуется как отмена/ошибка/EOF.
 """
 
 import threading
 import logging
 import queue
-from typing import Optional, Callable
+import time
+import ctypes
+from ctypes import wintypes
+from pathlib import Path
+from typing import Optional, Callable, List
 
 import numpy as np
 
@@ -38,14 +47,38 @@ from index.moov_builder import _abs_offset
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------
+# Windows API для принудительной отмены синхронного I/O чужого потока
+# ------------------------------------------------------------------
+THREAD_TERMINATE = 0x0001
+OpenThread = ctypes.windll.kernel32.OpenThread
+OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+OpenThread.restype = wintypes.HANDLE
+CancelSynchronousIo = ctypes.windll.kernel32.CancelSynchronousIo
+CancelSynchronousIo.argtypes = [wintypes.HANDLE]
+CancelSynchronousIo.restype = wintypes.BOOL
+CloseHandle = ctypes.windll.kernel32.CloseHandle
+CloseHandle.argtypes = [wintypes.HANDLE]
+CloseHandle.restype = wintypes.BOOL
+
 LOOKAHEAD_FRAMES = 12
+DEFAULT_WORKERS = 3
+BUFFER_MAX_FRAMES = 300
+
+_ACQUIRE_CANCEL_HARD_TIMEOUT_SEC = 10.0
+_TASK_WATCHDOG_TIMEOUT_SEC = 20.0
+_HEALTH_CHECK_INTERVAL_SEC = 0.2
 
 
 class SeekRequest:
-    """Представляет выполняющийся запрос перемотки с возможностью отмены."""
+    """Хэндл запроса перемотки для внешнего кода."""
 
-    def __init__(self, generation: int):
+    def __init__(self, generation: int,
+                 on_complete: Optional[Callable[[FrameRingBuffer], None]] = None,
+                 on_error: Optional[Callable[[str], None]] = None):
         self.generation = generation
+        self.on_complete = on_complete
+        self.on_error = on_error
         self._cancelled = threading.Event()
         self._done = threading.Event()
         self._success = False
@@ -76,99 +109,345 @@ class SeekRequest:
         return self._error
 
 
-class SeekEngine:
-    """
-    Асинхронный движок перемотки. Один воркер-поток обрабатывает все запросы.
-    Новый seek отменяет текущий и сразу становится в очередь.
-    """
+class SeekWorker:
+    """Постоянный воркер с жёстко привязанным буфером."""
 
-    def __init__(
-        self,
-        lazy_index: LazyIndex,
-        decoder: Decoder,
-        reader: WinSequentialReader,
-    ):
+    def __init__(self, worker_id: int):
+        self.id = worker_id
+        self.buffer = FrameRingBuffer(max_frames=BUFFER_MAX_FRAMES)
+        self.state = 'free'                      # 'free' | 'busy' | 'stuck'
+        self.thread: Optional[threading.Thread] = None
+        self.task_start_ts = 0.0
+        self.current_request: Optional[SeekRequest] = None
+        self.current_frame_idx = 0
+
+
+class _SeekCommand:
+    __slots__ = ('frame_idx', 'request')
+
+    def __init__(self, frame_idx: int, request: SeekRequest):
+        self.frame_idx = frame_idx
+        self.request = request
+
+
+class _SeekResult:
+    __slots__ = ('worker', 'request', 'success', 'cancelled', 'error_msg')
+
+    def __init__(self, worker: SeekWorker, request: SeekRequest,
+                 success: bool, cancelled: bool, error_msg: Optional[str]):
+        self.worker = worker
+        self.request = request
+        self.success = success
+        self.cancelled = cancelled
+        self.error_msg = error_msg
+
+
+class SeekEngine:
+    """Пул воркеров для асинхронного seek."""
+
+    def __init__(self, lazy_index: LazyIndex, decoder: Decoder,
+                 reader: Optional[WinSequentialReader] = None,
+                 num_workers: int = DEFAULT_WORKERS):
         self._lazy_index = lazy_index
         self._decoder = decoder
-        self._base_reader = reader  # базовый ридер, для совместимости (не используется напрямую)
-        self._current_request: Optional[SeekRequest] = None
-        self._generation = 0
+        self._base_reader = reader  # не используется, оставлен для совместимости
+
+        self.workers: List[SeekWorker] = [SeekWorker(i) for i in range(max(1, num_workers))]
+
+        self._command_queue: "queue.Queue[_SeekCommand]" = queue.Queue()
+        self._result_queue: "queue.Queue[_SeekResult]" = queue.Queue()
+
         self._lock = threading.Lock()
+        self._generation = 0
+        self._current_request: Optional[SeekRequest] = None
 
-        # Очередь команд для воркера
-        self._command_queue = queue.Queue()
+        self._closing = threading.Event()
+        self._coordinator_thread = threading.Thread(
+            target=self._coordinator_loop, daemon=True, name="SeekCoordinator"
+        )
+        self._coordinator_thread.start()
 
-        # Запускаем воркер
-        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="SeekWorker")
-        self._worker_thread.start()
-
-    def _worker_loop(self):
-        """Основной цикл воркера: берёт команды из очереди и выполняет их."""
-        while True:
-            try:
-                command, args, kwargs = self._command_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-
-            if command == "seek":
-                self._process_seek(*args, **kwargs)
-            elif command == "stop":
-                break
-
-    def _process_seek(self, request: SeekRequest, frame_idx: int, on_complete, on_error):
-        """Выполняет seek-запрос внутри воркера."""
-        try:
-            buffer = self._seek_sync_internal(frame_idx, request)
-            if request.is_cancelled:
-                return
-            with self._lock:
-                if request.generation != self._generation:
-                    return  # устаревший запрос
-            request._mark_done(True)
-            if on_complete:
-                on_complete(buffer)
-        except Exception as e:
-            logger.exception("Seek error")
-            request._mark_done(False, str(e))
-            if on_error:
-                on_error(str(e))
-
+    # ------------------------------------------------------------------
+    # Публичный API
+    # ------------------------------------------------------------------
     def seek_async(
         self,
         frame_idx: int,
         on_complete: Callable[[FrameRingBuffer], None],
-        on_error: Callable[[str], None] = None,
+        on_error: Optional[Callable[[str], None]] = None,
     ) -> SeekRequest:
-        """
-        Ставит запрос в очередь. Предыдущий отменяется.
-        Возвращает SeekRequest для отслеживания/отмены.
-        """
+        """Ставит запрос в очередь координатора. Предыдущий запрос отменяется."""
         with self._lock:
             self._generation += 1
             gen = self._generation
-            if self._current_request and not self._current_request._done.is_set():
+            if self._current_request is not None and not self._current_request._done.is_set():
                 self._current_request.cancel()
-            request = SeekRequest(gen)
+            request = SeekRequest(gen, on_complete=on_complete, on_error=on_error)
             self._current_request = request
 
-        # Отправляем команду воркеру
-        self._command_queue.put(("seek", (request, frame_idx, on_complete, on_error), {}))
-
+        self._command_queue.put(_SeekCommand(frame_idx, request))
         return request
 
     def seek_sync(self, frame_idx: int) -> FrameRingBuffer:
-        """Синхронный seek (блокирует поток). Для тестов и совместимости."""
-        request = SeekRequest(0)
-        return self._seek_sync_internal(frame_idx, request)
+        """Синхронный seek (блокирует вызывающий поток). Для тестов/совместимости."""
+        done = threading.Event()
+        result = {}
+
+        def _on_complete(buf):
+            result['buffer'] = buf
+            done.set()
+
+        def _on_error(msg):
+            result['error'] = msg
+            done.set()
+
+        self.seek_async(frame_idx, _on_complete, _on_error)
+        done.wait()
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        return result.get('buffer', FrameRingBuffer(max_frames=2))
 
     def cancel_current(self):
-        """Отменяет текущий выполняющийся seek."""
+        """Отменяет текущий выполняющийся/ожидающий запрос."""
         with self._lock:
-            if self._current_request and not self._current_request._done.is_set():
+            if self._current_request is not None and not self._current_request._done.is_set():
                 self._current_request.cancel()
 
-    def _seek_sync_internal(self, frame_idx: int, request: SeekRequest) -> FrameRingBuffer:
-        """Основная логика seek. Может быть отменена через request."""
+    def close(self):
+        """Останавливает координатор и по возможности прерывает все воркеры."""
+        self._closing.set()
+        self._command_queue.put(None)  # будим координатор без ожидания poll-таймаута
+        if self._coordinator_thread.is_alive():
+            self._coordinator_thread.join(timeout=3.0)
+
+        # Финальная попытка добить воркеры — best effort, не блокируем вечно.
+        for worker in self.workers:
+            if worker.thread is not None and worker.thread.is_alive():
+                if worker.current_request is not None:
+                    worker.current_request.cancel()
+                self._cancel_thread_io(worker)
+                worker.thread.join(timeout=1.0)
+                if worker.thread.is_alive():
+                    logger.warning("SeekEngine.close(): SeekWorker %d не завершился", worker.id)
+
+    # ------------------------------------------------------------------
+    # Координатор — единственный поток, управляющий состоянием пула
+    # ------------------------------------------------------------------
+    def _coordinator_loop(self):
+        logger.info("SeekEngine: координатор запущен (воркеров: %d)", len(self.workers))
+        while not self._closing.is_set():
+            try:
+                cmd = self._command_queue.get(timeout=_HEALTH_CHECK_INTERVAL_SEC)
+            except queue.Empty:
+                cmd = None
+
+            self._drain_results()
+
+            if cmd is None:
+                if self._closing.is_set():
+                    break
+                self._check_watchdog()
+                continue
+
+            self._handle_command(cmd)
+            self._check_watchdog()
+
+        self._drain_results()
+        logger.info("SeekEngine: координатор остановлен")
+
+    def _handle_command(self, cmd: _SeekCommand):
+        request = cmd.request
+        if request.is_cancelled:
+            if not request._done.is_set():
+                request._mark_done(False, "Seek отменён")
+            return
+
+        with self._lock:
+            if request.generation != self._generation:
+                return
+
+        worker = self._acquire_worker()
+        if worker is None:
+            logger.error("SeekEngine: нет доступных воркеров для seek(frame=%d)", cmd.frame_idx)
+            request._mark_done(False, "Нет доступных воркеров для seek")
+            if request.on_error:
+                try:
+                    request.on_error("Нет доступных воркеров для seek")
+                except Exception:
+                    logger.exception("Ошибка в on_error")
+            return
+
+        worker.buffer.clear()
+        worker.current_request = request
+        worker.current_frame_idx = cmd.frame_idx
+        worker.task_start_ts = time.monotonic()
+        worker.state = 'busy'
+
+        t = threading.Thread(
+            target=self._run_worker_task, args=(worker, cmd),
+            daemon=True, name=f"SeekWorker-{worker.id}",
+        )
+        worker.thread = t
+        t.start()
+
+    def _acquire_worker(self) -> Optional[SeekWorker]:
+        for w in self.workers:
+            if w.state == 'free':
+                return w
+
+        busy = [w for w in self.workers if w.state == 'busy']
+        if not busy:
+            return None
+
+        busy.sort(key=lambda w: w.task_start_ts)
+        victim = busy[0]
+        logger.info("SeekEngine: все воркеры заняты, вытесняем SeekWorker %d", victim.id)
+        self._force_cancel_and_wait(victim)
+
+        if victim.thread is None:
+            victim.state = 'free'
+            return victim
+
+        return self._retire_stuck_worker(victim)
+
+    def _force_cancel_and_wait(self, worker: SeekWorker,
+                               hard_timeout: float = _ACQUIRE_CANCEL_HARD_TIMEOUT_SEC):
+        """Блокирующее ожидание завершения потока воркера с эскалацией отмены."""
+        if worker.current_request is not None and not worker.current_request._done.is_set():
+            worker.current_request.cancel()
+
+        if worker.thread is None:
+            return
+
+        deadline = time.monotonic() + hard_timeout
+        while time.monotonic() < deadline:
+            self._cancel_thread_io(worker)
+            worker.thread.join(timeout=0.5)
+            if not worker.thread.is_alive():
+                worker.thread = None
+                return
+
+        logger.error(
+            "SeekWorker %d: не удалось прервать чтение за %.0f сек "
+            "(CancelSynchronousIo не помог) — воркер выводится из пула",
+            worker.id, hard_timeout,
+        )
+
+    def _retire_stuck_worker(self, worker: SeekWorker) -> SeekWorker:
+        """Выводит зависший воркер из пула навсегда, создаёт замену."""
+        worker.state = 'stuck'
+        idx = self.workers.index(worker)
+        new_id = max(w.id for w in self.workers) + 1
+        replacement = SeekWorker(new_id)
+        self.workers[idx] = replacement
+        logger.error(
+            "SeekWorker %d окончательно выведен из пула (завис), добавлен SeekWorker %d",
+            worker.id, new_id,
+        )
+        return replacement
+
+    def _drain_results(self):
+        while True:
+            try:
+                result = self._result_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._finalize_worker(result)
+
+    def _finalize_worker(self, result: _SeekResult):
+        worker = result.worker
+
+        if worker.thread is not None:
+            worker.thread.join(timeout=2.0)
+            if worker.thread.is_alive():
+                logger.warning(
+                    "SeekWorker %d: результат получен, но поток ещё не завершился",
+                    worker.id,
+                )
+                return
+            worker.thread = None
+
+        request = result.request
+        try:
+            if request._done.is_set():
+                return
+
+            with self._lock:
+                is_current = (request.generation == self._generation)
+
+            if result.cancelled or not is_current:
+                request._mark_done(False, "Seek отменён")
+                return
+
+            if result.success:
+                request._mark_done(True)
+                if request.on_complete:
+                    try:
+                        request.on_complete(worker.buffer)
+                    except Exception:
+                        logger.exception("Ошибка в on_complete seek-запроса")
+            else:
+                request._mark_done(False, result.error_msg)
+                if request.on_error:
+                    try:
+                        request.on_error(result.error_msg or "seek failed")
+                    except Exception:
+                        logger.exception("Ошибка в on_error seek-запроса")
+        finally:
+            worker.current_request = None
+            worker.state = 'free'
+
+    def _check_watchdog(self):
+        now = time.monotonic()
+        for worker in list(self.workers):
+            if worker.state != 'busy' or worker.thread is None:
+                continue
+            if now - worker.task_start_ts <= _TASK_WATCHDOG_TIMEOUT_SEC:
+                continue
+
+            request = worker.current_request
+            logger.warning(
+                "SeekWorker %d: задача (frame=%s) выполняется дольше %.0f сек, "
+                "принудительная отмена по watchdog",
+                worker.id, worker.current_frame_idx, _TASK_WATCHDOG_TIMEOUT_SEC,
+            )
+
+            self._force_cancel_and_wait(worker)
+
+            if worker.thread is not None and worker.thread.is_alive():
+                self._retire_stuck_worker(worker)
+            else:
+                worker.thread = None
+                worker.state = 'free'
+
+            if request is not None and not request._done.is_set():
+                request._mark_done(False, "Таймаут seek-операции (watchdog)")
+                if request.on_error:
+                    try:
+                        request.on_error("Таймаут seek-операции (watchdog)")
+                    except Exception:
+                        logger.exception("Ошибка в on_error после watchdog-таймаута")
+            worker.current_request = None
+
+    # ------------------------------------------------------------------
+    # Работа воркера (выполняется на ОТДЕЛЬНОМ потоке SeekWorker-N)
+    # ------------------------------------------------------------------
+    def _run_worker_task(self, worker: SeekWorker, cmd: _SeekCommand):
+        request = cmd.request
+        success = False
+        error_msg = None
+        try:
+            self._do_seek(worker, request, cmd.frame_idx)
+            success = worker.buffer.count > 0
+        except Exception as e:
+            logger.exception("SeekWorker %d: ошибка seek(frame=%d)", worker.id, cmd.frame_idx)
+            error_msg = str(e)
+        finally:
+            cancelled = request.is_cancelled
+            self._result_queue.put(_SeekResult(worker, request, success, cancelled, error_msg))
+
+    def _do_seek(self, worker: SeekWorker, request: SeekRequest, frame_idx: int):
+        """Основная логика seek — пишет напрямую в worker.buffer."""
         window = self._lazy_index.open_window(frame_idx)
         if window is None or len(window.video_records) == 0:
             raise RuntimeError("Не удалось открыть окно индекса")
@@ -177,14 +456,18 @@ class SeekEngine:
         if len(idr_indices) == 0:
             raise RuntimeError("В окне не найдены IDR-кадры")
 
-        local_target = frame_idx - window.window_start_frame
+        local_target = max(0, min(frame_idx - window.window_start_frame,
+                                  len(window.video_records) - 1))
         pos = np.searchsorted(idr_indices, local_target, side='right') - 1
         if pos < 0:
             pos = 0
-        local_idr = idr_indices[pos]
+        local_idr = int(idr_indices[pos])
+        local_idr = max(0, min(local_idr, len(window.video_records) - 1))
 
         end_local = min(len(window.video_records) - 1,
                         max(local_idr + LOOKAHEAD_FRAMES, local_target))
+        if end_local < local_idr:
+            end_local = local_idr
 
         first_rec = window.video_records[local_idr]
         start_offset = int(_abs_offset(first_rec))
@@ -200,30 +483,34 @@ class SeekEngine:
             raise RuntimeError("Некорректный размер данных для seek")
 
         if request.is_cancelled:
-            raise RuntimeError("Seek отменён")
+            return
 
-        # Создаём отдельный ридер для этого seek
-        reader = WinSequentialReader(self._lazy_index.mp4_path, rate_limit=0, overlapped=False)
+        # СОВМЕСТИМОСТЬ С НОВЫМ WinSequentialReader
+        # Создаём ридер с параметрами по умолчанию (buffer_size=1MB,
+        # read_timeout_ms=5000, use_no_buffering=False для SMB).
+        reader = WinSequentialReader(
+            self._lazy_index.mp4_path,
+            buffer_size=1024 * 1024,
+            read_timeout_ms=5000,
+            use_no_buffering=False,
+        )
         try:
-            reader.set_cancel_event(request.cancel_event)
-            raw_data = reader.read_sequential(start_offset, read_size)
+            # Новый API: seek(offset) + read(size)
+            reader.seek(start_offset)
+            raw_data = reader.read(read_size)
         finally:
-            reader.set_cancel_event(threading.Event())  # сбрасываем
             reader.close()
 
-        if request.is_cancelled:
-            return FrameRingBuffer(max_frames=2)
+        if request.is_cancelled or not raw_data:
+            return
 
-        if not raw_data:
-            return FrameRingBuffer(max_frames=2)
-
-        buffer = FrameRingBuffer(max_frames=300)
         first_decode_error = None
-        buffer_full = False  # достижение предела буфера seek-а — НЕ отмена
-
+        buffer_full = False
         for i in range(local_idr, end_local + 1):
             if request.is_cancelled:
-                raise RuntimeError("Seek отменён")
+                return
+            if i < 0 or i >= len(window.video_records):
+                continue
 
             rec = window.video_records[i]
             off = int(_abs_offset(rec))
@@ -237,26 +524,22 @@ class SeekEngine:
 
             if rel_start < 0 or size <= 0:
                 continue
+            if rel_start + size > len(raw_data):
+                size = len(raw_data) - rel_start
+                if size <= 0:
+                    continue
 
             sample = raw_data[rel_start:rel_start + size]
             try:
                 filtered = self._decoder.filter_avcc(sample)
-            except Exception as e:
-                if first_decode_error is None:
-                    first_decode_error = e
-                continue
-            if not filtered:
-                continue
-
-            try:
+                if not filtered:
+                    continue
                 frames = self._decoder.decode_sample(filtered)
                 for frame in frames:
+                    if request.is_cancelled:
+                        return
                     pts = video_frame_to_pts(window.window_start_frame + i)
-                    if not buffer.try_push(frame, pts):
-                        # Буфер seek-а физически заполнен (max_frames=300) —
-                        # это естественный предел, а не отмена запроса.
-                        # Результат остаётся валидным и должен быть отдан
-                        # вызывающему через on_complete().
+                    if not worker.buffer.try_push(frame, pts):
                         buffer_full = True
                         break
                 if buffer_full:
@@ -266,15 +549,22 @@ class SeekEngine:
                     first_decode_error = e
                 continue
 
-        if buffer.count == 0:
-            error_msg = "Не удалось декодировать ни одного кадра при seek"
+        if worker.buffer.count == 0 and not request.is_cancelled:
+            msg = "Не удалось декодировать ни одного кадра при seek"
             if first_decode_error is not None:
-                error_msg += f": {first_decode_error}"
-            raise RuntimeError(error_msg)
+                msg += f": {first_decode_error}"
+            raise RuntimeError(msg)
 
-        return buffer
-
-    def close(self):
-        """Останавливает воркер и освобождает ресурсы."""
-        self._command_queue.put(("stop", (), {}))
-        self._worker_thread.join(timeout=2.0)
+    def _cancel_thread_io(self, worker: SeekWorker):
+        """Прерывает блокирующий синхронный I/O в потоке воркера."""
+        if worker.thread is None or not worker.thread.is_alive():
+            return
+        native_id = worker.thread.native_id
+        if not native_id:
+            return
+        h_thread = OpenThread(THREAD_TERMINATE, False, native_id)
+        if h_thread:
+            try:
+                CancelSynchronousIo(h_thread)
+            finally:
+                CloseHandle(h_thread)

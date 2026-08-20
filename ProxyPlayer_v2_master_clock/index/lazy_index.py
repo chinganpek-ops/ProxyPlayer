@@ -49,6 +49,27 @@ lazy_index.py – оконный доступ к индексу для ProxyPlay
   это не единственный, а вспомогательный инструмент для явного точечного
   использования (например, если понадобится специально продлить окно, не
   сдвигая начало); автоматический live-рост через него больше не идёт.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью, итерация 3 — инкрементальное чтение):
+- refresh_from_disk() переписан с "полный пересчёт каждый раз" на
+  "дочитать только новый хвост и добавить к накопленному". Раньше метод
+  вызывал idx_cache.remap_idx(), который заново сканировал ВЕСЬ .idx-файл
+  с нуля на каждый опрос (раз в 5 сек, см. PlaybackEngine._tick_window_
+  management) — для 8+ часовой растущей записи это становилось всё
+  дороже по мере роста файла. Теперь используется
+  idx_cache.remap_idx_incremental(), который сканирует только элементы
+  u4-массива после self._next_scan_element (граница предыдущего скана) и
+  возвращает только НОВЫЕ записи; они конкатенируются к уже накопленным
+  self._all_193/_all_c9/_video_records_full, а не заменяют их целиком.
+  Корректность опирается на строго append-only рост .idx (новые записи
+  только дописываются в конец, старые байты никогда не меняются) — так
+  описан ваш сценарий (сначала 12 видео-записей, затем аудио к ним,
+  монотонно в конец файла).
+- Добавлен _full_rescan() — аварийный откат на полный пересчёт индекса с
+  нуля, если remap_idx_incremental() вдруг увидит файл короче, чем уже
+  просканировано (признак пересоздания/усечения файла, а не чистого
+  роста) — на такой случай инкрементальное состояние считается
+  недостоверным и пересобирается заново.
 """
 
 import threading
@@ -69,7 +90,7 @@ from index.moov_builder import (
     build_audio_chunks_in_range,
     DEFAULT_TRACK_FILTER,
 )
-from index.idx_cache import open_idx_mmap, remap_idx
+from index.idx_cache import remap_idx_incremental
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +166,13 @@ class LazyIndex:
         self.mp4_path = mp4_path
         self.mdat_end = mdat_end
 
-        # mmap полного индекса (только для чтения)
-        self._all_193, self._all_c9 = open_idx_mmap(mirror_path)
+        # Инкрементальный скан с 0 при первом открытии эквивалентен
+        # полному open_idx_mmap(), но дополнительно даёт next_scan_element —
+        # границу, с которой refresh_from_disk() продолжит дочитывать
+        # только новый хвост файла (см. idx_cache._scan_markers).
+        self._all_193, self._all_c9, self._next_scan_element = remap_idx_incremental(
+            mirror_path, start_element=0
+        )
 
         # Полные video_records (глобальные индексы)
         self._video_records_full = _filter_normal_records(self._all_193)
@@ -236,12 +262,28 @@ class LazyIndex:
         Дешёвая проверка (без построения нового окна): пора ли начинать
         фоновую сборку следующего окна, потому что текущая позиция
         воспроизведения приближается к концу активного окна.
+
+        ПРАВКА (продакшен-ревью, диагностика "GUI периодически блокируется"):
+        эта проверка вызывается на КАЖДЫЙ кадр рендера из GUI-потока (через
+        PlaybackEngine._tick_window_management). Раньше она брала обычную
+        self._lock (RLock) — тот же лок, что refresh_from_disk() держит на
+        всё время полного remap mmap + пересчёта массива записей в фоновом
+        потоке (для многочасового файла это не мгновенно). Пока фоновый
+        поток держал лок, GUI-поток блокировался здесь в ожидании — отсюда
+        периодические подвисания интерфейса. Теперь лок берётся
+        неблокирующе: если он сейчас занят фоновой операцией, просто
+        пропускаем эту проверку до следующего кадра рендера (доли секунды
+        при обычном fps) вместо ожидания.
         """
-        with self._lock:
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
             if self._window is None:
                 return False
             remaining_frames = self._window.window_end_frame - current_frame
             return remaining_frames <= trigger_margin_chunks * FRAMES_PER_CHUNK
+        finally:
+            self._lock.release()
 
     def build_slid_window(
         self, current_frame: int,
@@ -303,9 +345,23 @@ class LazyIndex:
 
     def refresh_from_disk(self) -> bool:
         """
-        Переоткрывает mmap зеркала (после того как IndexService дозаписал
-        новые данные на диск) и обновляет _video_records_full/
-        _audio_tracks_full/total_frames.
+        Дочитывает НОВЫЙ хвост зеркала (после того как IndexService
+        дозаписал данные на диск) и ДОБАВЛЯЕТ найденные записи к уже
+        накопленным _all_193/_all_c9/_video_records_full/total_frames.
+
+        ПРАВКА (продакшен-ревью, инкрементальное чтение): раньше здесь
+        вызывался remap_idx(), который каждый раз пересканировал ВЕСЬ
+        файл заново (полный np.where по всему u4-массиву) — для 8+
+        часового растущего файла это означало, что каждый периодический
+        опрос (раз в 5 сек) становился дороже по мере роста файла,
+        пересчитывая давно обработанные данные. Для append-only роста
+        (новые записи только дописываются в конец, старые байты не
+        меняются) это лишняя работа: раз найденная и провалидированная
+        запись остаётся валидной навсегда. Теперь используется
+        remap_idx_incremental(), который сканирует только новый хвост
+        (начиная с self._next_scan_element) и возвращает только НОВЫЕ
+        записи — они конкатенируются к уже накопленным массивам, а не
+        заменяют их.
 
         НЕ трогает активное окно (self._window) — это отдельная забота
         is_near_window_end()/build_slid_window()/commit_window(), которая
@@ -315,30 +371,82 @@ class LazyIndex:
         build_slid_window() однажды упрётся в старые данные, даже если
         IndexService уже дозаписал новые кадры в зеркало на диске.
 
-        Возвращает True, если появились новые видео-кадры, иначе False.
+        Возвращает True, если появились новые видео- или аудио-записи,
+        иначе False.
         """
         with self._lock:
             try:
-                new_all_193, new_all_c9 = remap_idx(self.mirror_path)
+                new_193, new_c9, next_scan_element = remap_idx_incremental(
+                    self.mirror_path, self._next_scan_element
+                )
             except Exception as e:
                 logger.error(f"Не удалось обновить mmap зеркала {self.mirror_path}: {e}")
                 return False
 
-            new_video_records_full = _filter_normal_records(new_all_193)
+            if next_scan_element < self._next_scan_element:
+                # Файл стал короче, чем мы уже успели просканировать —
+                # это не чистый рост (пересоздание/усечение файла на
+                # удалённой стороне). Инкрементальное состояние больше не
+                # заслуживает доверия — аварийный откат на полный пересчёт.
+                logger.warning(
+                    "Зеркало %s короче, чем ожидалось (граница %d < %d) — "
+                    "похоже на пересоздание файла, выполняю полный пересчёт индекса",
+                    self.mirror_path, next_scan_element, self._next_scan_element,
+                )
+                return self._full_rescan()
 
-            self._all_193 = new_all_193
-            self._all_c9 = new_all_c9
+            self._next_scan_element = next_scan_element
 
-            if len(new_video_records_full) <= len(self._video_records_full):
-                # Новых кадров нет (или IndexService ещё не дописал
+            if len(new_193) == 0 and len(new_c9) == 0:
+                # Новых данных нет (или IndexService ещё не дописал
                 # очередную порцию) — ничего не делаем.
                 return False
 
-            self._video_records_full = new_video_records_full
-            # Полный список аудио-треков кэшируется лениво в _build_window();
-            # инвалидируем, чтобы он был пересчитан с учётом новых C9-записей.
-            self._audio_tracks_full = None
-            return True
+            got_new_video = False
+            if len(new_193) > 0:
+                self._all_193 = np.concatenate([self._all_193, new_193])
+                new_video_records = _filter_normal_records(new_193)
+                if len(new_video_records) > 0:
+                    self._video_records_full = np.concatenate(
+                        [self._video_records_full, new_video_records]
+                    )
+                    got_new_video = True
+
+            if len(new_c9) > 0:
+                self._all_c9 = np.concatenate([self._all_c9, new_c9])
+                # Полный список аудио-треков (self._audio_tracks_full)
+                # строится лениво в _build_window() через build_audio_tracks(),
+                # которая считает size2 по разнице СОСЕДНИХ записей одной
+                # дорожки — это нельзя просто дописать в хвост без
+                # пересчёта границы. Инвалидируем: следующий _build_window()
+                # пересоберёт его из уже накопленного (и по-прежнему
+                # заметно меньшего, чем полный файл) self._all_c9.
+                self._audio_tracks_full = None
+
+            return got_new_video or len(new_c9) > 0
+
+    def _full_rescan(self) -> bool:
+        """
+        Полный пересчёт индекса с нуля — аварийный откат, если
+        инкрементальное состояние оказалось недостоверным (см.
+        refresh_from_disk). Активное окно (self._window) не трогает —
+        как и refresh_from_disk(), оставляет обновление окна на
+        is_near_window_end()/build_slid_window()/commit_window().
+        """
+        try:
+            all_193, all_c9, next_scan_element = remap_idx_incremental(
+                self.mirror_path, start_element=0
+            )
+        except Exception as e:
+            logger.error(f"Не удалось выполнить полный пересчёт индекса {self.mirror_path}: {e}")
+            return False
+
+        self._all_193 = all_193
+        self._all_c9 = all_c9
+        self._next_scan_element = next_scan_element
+        self._video_records_full = _filter_normal_records(all_193)
+        self._audio_tracks_full = None
+        return True
 
     def close(self):
         """Освобождает ресурсы."""

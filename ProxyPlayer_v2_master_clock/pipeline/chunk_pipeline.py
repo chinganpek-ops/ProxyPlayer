@@ -601,21 +601,27 @@ class ChunkPipeline:
            возврата из этого метода — так self._window в LazyIndex и
            активное окно в ChunkPipeline не могут разойтись.
         """
-        with self._window_lock:
-            old_window = self._window
-            chunk_shift = new_window.window_start_chunk - old_window.window_start_chunk
-            self._window = new_window
-            self._scheduler.shift_loaded(chunk_shift, new_window.total_chunks)
-        # Обновляем диапазоны PTS для видео- и аудиостадий — благодаря
-        # overlap в new_window новый pts_min не может быть больше PTS
-        # пакетов, уже поставленных в очередь до переключения.
-        for stage in self._stages:
-            if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
-                stage.set_active_window(new_window)
-        logger.info(
-            "ChunkPipeline: окно сдвинуто (chunk_shift=%d), новые кадры %d-%d",
-            chunk_shift, new_window.window_start_frame, new_window.window_end_frame,
-        )
+        if new_window is None:
+            logger.error("shift_window: new_window is None")
+            return
+        try:
+            with self._window_lock:
+                old_window = self._window
+                chunk_shift = new_window.window_start_chunk - old_window.window_start_chunk
+                self._window = new_window
+                self._scheduler.shift_loaded(chunk_shift, new_window.total_chunks)
+            # Обновляем диапазоны PTS для видео- и аудиостадий — благодаря
+            # overlap в new_window новый pts_min не может быть больше PTS
+            # пакетов, уже поставленных в очередь до переключения.
+            for stage in self._stages:
+                if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
+                    stage.set_active_window(new_window)
+            logger.info(
+                "ChunkPipeline: окно сдвинуто (chunk_shift=%d), новые кадры %d-%d",
+                chunk_shift, new_window.window_start_frame, new_window.window_end_frame,
+            )
+        except Exception as e:
+            logger.exception(f"Ошибка в shift_window: {e}")    
 
     def set_video_buffer(self, new_buffer: FrameRingBuffer):
         self._video_buffer = new_buffer

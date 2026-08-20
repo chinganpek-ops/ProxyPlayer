@@ -1,0 +1,1360 @@
+2026-08-19 15:32:30 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:32:30 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:32:32 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:32:32 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:32:32 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:32:33 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:32:33 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 15:32:35 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:32:37 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:32:38 | INFO     | MainThread           | [STREAM SEEK] frame=24236 callback=True
+2026-08-19 15:32:38 | INFO     | MainThread           | [PLAYBACK SEEK] frame=24236 gen_before=0
+2026-08-19 15:32:38 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=24236
+2026-08-19 15:32:38 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-19 15:32:38 | INFO     | SeekWorker           | [SEEK START] generation=1 frame=24236
+2026-08-19 15:32:38 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-19 15:32:38 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:32:39 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=1 window_start=20484
+2026-08-19 15:32:39 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 15:32:39 | INFO     | SeekWorker           | [SEEK END] generation=1 frame=24236
+2026-08-19 15:32:39 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 24228, 'audio_clock': 46517760}
+2026-08-19 15:32:41 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 24258, 'audio_clock': 46576128}
+2026-08-19 15:32:42 | INFO     | MainThread           | [STREAM SEEK] frame=15597 callback=True
+2026-08-19 15:32:42 | INFO     | MainThread           | [PLAYBACK SEEK] frame=15597 gen_before=1
+2026-08-19 15:32:42 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=15597
+2026-08-19 15:32:42 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-19 15:32:42 | INFO     | SeekWorker           | [SEEK START] generation=2 frame=15597
+2026-08-19 15:32:42 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-19 15:32:42 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:32:42 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=2 window_start=11844
+2026-08-19 15:32:42 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 15:32:42 | INFO     | SeekWorker           | [SEEK END] generation=2 frame=15597
+2026-08-19 15:32:43 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15593, 'audio_clock': 29938560}
+2026-08-19 15:32:45 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15639, 'audio_clock': 30027648}
+2026-08-19 15:32:47 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15690, 'audio_clock': 30124928}
+2026-08-19 15:32:49 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15740, 'audio_clock': 30222208}
+2026-08-19 15:32:51 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15789, 'audio_clock': 30316416}
+2026-08-19 15:32:53 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15841, 'audio_clock': 30415744}
+2026-08-19 15:32:55 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15891, 'audio_clock': 30510976}
+2026-08-19 15:32:57 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 15941, 'audio_clock': 30608256}
+2026-08-19 15:32:57 | INFO     | MainThread           | [STREAM SEEK] frame=7512 callback=True
+2026-08-19 15:32:58 | INFO     | MainThread           | [PLAYBACK SEEK] frame=7512 gen_before=2
+2026-08-19 15:32:58 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=7512
+2026-08-19 15:32:58 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=3
+2026-08-19 15:32:58 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=3
+2026-08-19 15:32:58 | INFO     | SeekWorker           | [SEEK START] generation=3 frame=7512
+2026-08-19 15:32:58 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:33:30 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\venv\\Scripts\\python.exe") is still running.
+2026-08-19 15:33:30 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\venv\\Scripts\\python.exe") is still running.
+2026-08-19 15:33:30 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:33:30 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 15:39:11 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:39:11 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:39:19 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:39:19 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:39:19 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:39:20 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:39:20 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 15:39:22 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 25472, 'audio_clock': 48906240}
+2026-08-19 15:39:24 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 25472, 'audio_clock': 48906240}
+2026-08-19 15:39:26 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 25472, 'audio_clock': 48906240}
+2026-08-19 15:39:28 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:39:30 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 8, 'audio_clock': 16384}
+2026-08-19 15:39:32 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 59, 'audio_clock': 114688}
+2026-08-19 15:39:34 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 109, 'audio_clock': 210944}
+2026-08-19 15:39:36 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 159, 'audio_clock': 306176}
+2026-08-19 15:39:37 | INFO     | MainThread           | [STREAM SEEK] frame=25472 callback=True
+2026-08-19 15:39:37 | INFO     | MainThread           | [PLAYBACK SEEK] frame=25472 gen_before=0
+2026-08-19 15:39:37 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=25472
+2026-08-19 15:39:37 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-19 15:39:37 | INFO     | SeekWorker           | [SEEK START] generation=1 frame=25472
+2026-08-19 15:39:37 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-19 15:39:37 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:39:37 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=1 window_start=21720
+2026-08-19 15:39:37 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 15:39:37 | INFO     | SeekWorker           | [SEEK END] generation=1 frame=25472
+2026-08-19 15:39:38 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 188, 'audio_clock': 361472}
+2026-08-19 15:39:40 | INFO     | MainThread           | [STREAM SEEK] frame=25472 callback=True
+2026-08-19 15:39:40 | INFO     | MainThread           | [PLAYBACK SEEK] frame=25472 gen_before=1
+2026-08-19 15:39:40 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=25472
+2026-08-19 15:39:40 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-19 15:39:40 | INFO     | SeekWorker           | [SEEK START] generation=2 frame=25472
+2026-08-19 15:39:40 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-19 15:39:40 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:39:40 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=2 window_start=21720
+2026-08-19 15:39:40 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 15:39:40 | INFO     | SeekWorker           | [SEEK END] generation=2 frame=25472
+2026-08-19 15:39:40 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 188, 'audio_clock': 361472}
+2026-08-19 15:39:42 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 230, 'audio_clock': 442368}
+2026-08-19 15:39:44 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 280, 'audio_clock': 538624}
+2026-08-19 15:39:45 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 15:39:45 | INFO     | MainThread           | [SEEK CANCEL CALL]
+2026-08-19 15:39:46 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 294, 'audio_clock': 566272}
+2026-08-19 15:39:48 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 294, 'audio_clock': 566272}
+2026-08-19 15:39:49 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 15:39:49 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:39:49 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 15:39:49 | INFO     | MainThread           |   - SeekWorker (daemon=True, alive=True)
+2026-08-19 15:39:49 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-19 15:39:49 | INFO     | MainThread           |   - Dummy-3 (daemon=True, alive=True)
+2026-08-19 15:39:49 | INFO     | MainThread           |   - Dummy-8 (daemon=True, alive=True)
+2026-08-19 15:41:56 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:41:56 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 15:42:00 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:42:00 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:42:05 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:42:05 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:42:05 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:42:06 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 15:42:21 | INFO     | MainThread           | [STREAM SEEK] frame=0 callback=True
+2026-08-19 15:42:21 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:42:24 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 15:42:24 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 15:42:24 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:42:24 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 15:42:24 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-19 15:42:42 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:42:42 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 15:45:57 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:45:57 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:46:00 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:46:00 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 15:46:00 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 15:46:00 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:46:00 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 15:46:02 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 15:46:04 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 1, 'audio_clock': 2048}
+2026-08-19 15:46:06 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 50, 'audio_clock': 96256}
+2026-08-19 15:46:08 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 101, 'audio_clock': 194560}
+2026-08-19 15:46:10 | INFO     | MainThread           | [STREAM SEEK] frame=44456 callback=True
+2026-08-19 15:46:10 | INFO     | MainThread           | [PLAYBACK SEEK] frame=44456 gen_before=0
+2026-08-19 15:46:10 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=44456
+2026-08-19 15:46:10 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-19 15:46:10 | INFO     | SeekWorker           | [SEEK START] generation=1 frame=44456
+2026-08-19 15:46:10 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-19 15:46:10 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:46:10 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=1 window_start=40704
+2026-08-19 15:46:10 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 15:46:10 | INFO     | SeekWorker           | [SEEK END] generation=1 frame=44456
+2026-08-19 15:46:10 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 44442, 'audio_clock': 85328640}
+2026-08-19 15:46:12 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 44482, 'audio_clock': 85405440}
+2026-08-19 15:46:13 | INFO     | MainThread           | [STREAM SEEK] frame=25818 callback=True
+2026-08-19 15:46:13 | INFO     | MainThread           | [PLAYBACK SEEK] frame=25818 gen_before=1
+2026-08-19 15:46:13 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=25818
+2026-08-19 15:46:13 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-19 15:46:13 | INFO     | SeekWorker           | [SEEK START] generation=2 frame=25818
+2026-08-19 15:46:13 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-19 15:46:13 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 15:46:31 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\venv\\Scripts\\python.exe") is still running.
+2026-08-19 15:46:31 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\venv\\Scripts\\python.exe") is still running.
+2026-08-19 15:46:31 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 15:46:31 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 16:07:33 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:07:33 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 16:07:39 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:07:39 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:07:39 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 16:07:40 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 16:07:40 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 16:07:42 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 44996, 'audio_clock': 86392320}
+2026-08-19 16:07:44 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 44996, 'audio_clock': 86392320}
+2026-08-19 16:07:46 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 44996, 'audio_clock': 86392320}
+2026-08-19 16:07:48 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 16:07:50 | INFO     | MainThread           | [STREAM SEEK] frame=44996 callback=True
+2026-08-19 16:07:50 | INFO     | MainThread           | [PLAYBACK SEEK] frame=44996 gen_before=0
+2026-08-19 16:07:50 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 35, 'audio_clock': 67584}
+2026-08-19 16:07:50 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=44996
+2026-08-19 16:07:50 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-19 16:07:50 | INFO     | SeekWorker           | [SEEK START] generation=1 frame=44996
+2026-08-19 16:07:50 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-19 16:07:50 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:07:51 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=1 window_start=41244
+2026-08-19 16:07:51 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 16:07:51 | INFO     | SeekWorker           | [SEEK END] generation=1 frame=44996
+2026-08-19 16:07:51 | INFO     | MainThread           | [STREAM SEEK] frame=44996 callback=True
+2026-08-19 16:07:51 | INFO     | MainThread           | [PLAYBACK SEEK] frame=44996 gen_before=1
+2026-08-19 16:07:51 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=44996
+2026-08-19 16:07:51 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-19 16:07:51 | INFO     | SeekWorker           | [SEEK START] generation=2 frame=44996
+2026-08-19 16:07:51 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-19 16:07:51 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:07:52 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 35, 'audio_clock': 68608}
+2026-08-19 16:07:53 | INFO     | SeekWorker           | [ON SEEK COMPLETE] gen=2 window_start=41244
+2026-08-19 16:07:53 | INFO     | SeekWorker           | [ON SEEK COMPLETE FINISHED]
+2026-08-19 16:07:53 | INFO     | SeekWorker           | [SEEK END] generation=2 frame=44996
+2026-08-19 16:07:54 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 35, 'audio_clock': 68608}
+2026-08-19 16:07:56 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 67, 'audio_clock': 129024}
+2026-08-19 16:07:58 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:00 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:02 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:04 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:06 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:08 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:10 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:12 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:14 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:16 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:18 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:20 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:22 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:24 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:26 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:28 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:30 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:32 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:34 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:36 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 16:08:36 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:36 | INFO     | MainThread           | [SEEK CANCEL CALL]
+2026-08-19 16:08:38 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:40 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 83, 'audio_clock': 159744}
+2026-08-19 16:08:40 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 16:08:40 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 16:08:40 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 16:08:40 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 16:08:40 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 16:08:40 | INFO     | MainThread           |   - SeekWorker (daemon=True, alive=True)
+2026-08-19 16:08:40 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-19 16:08:40 | INFO     | MainThread           |   - Dummy-3 (daemon=True, alive=True)
+2026-08-19 16:08:40 | INFO     | MainThread           |   - Dummy-7 (daemon=True, alive=True)
+2026-08-19 16:08:40 | INFO     | MainThread           |   - Dummy-8 (daemon=True, alive=True)
+2026-08-19 16:08:49 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 16:08:49 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 16:09:01 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:09:01 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 16:09:03 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:09:03 | INFO     | MainThread           | Qt message handler установлен
+2026-08-19 16:09:03 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-19 16:09:04 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 16:09:04 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-19 16:09:06 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 16:09:08 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 0, 'audio_clock': 0}
+2026-08-19 16:09:10 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:10 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=0
+2026-08-19 16:09:10 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:10 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-19 16:09:10 | INFO     | SeekWorker           | [SEEK START] generation=1 frame=79076
+2026-08-19 16:09:10 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-19 16:09:10 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:10 | INFO     | SeekWorker           | [SEEK END] generation=1 frame=79076
+2026-08-19 16:09:10 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:12 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:15 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:15 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:15 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=1
+2026-08-19 16:09:15 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:15 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-19 16:09:15 | INFO     | SeekWorker           | [SEEK START] generation=2 frame=79076
+2026-08-19 16:09:15 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-19 16:09:15 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:15 | INFO     | SeekWorker           | [SEEK END] generation=2 frame=79076
+2026-08-19 16:09:17 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=2
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=3
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK START] generation=3 frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=3
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK END] generation=3 frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=3
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=4
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK START] generation=4 frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=4
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK END] generation=4 frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=4
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=5
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK START] generation=5 frame=79076
+2026-08-19 16:09:17 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=5
+2026-08-19 16:09:17 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:17 | INFO     | SeekWorker           | [SEEK END] generation=5 frame=79076
+2026-08-19 16:09:18 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:18 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=5
+2026-08-19 16:09:18 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:18 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=6
+2026-08-19 16:09:18 | INFO     | SeekWorker           | [SEEK START] generation=6 frame=79076
+2026-08-19 16:09:18 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=6
+2026-08-19 16:09:18 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:18 | INFO     | SeekWorker           | [SEEK END] generation=6 frame=79076
+2026-08-19 16:09:19 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:20 | INFO     | MainThread           | [STREAM SEEK] frame=79076 callback=True
+2026-08-19 16:09:20 | INFO     | MainThread           | [PLAYBACK SEEK] frame=79076 gen_before=6
+2026-08-19 16:09:20 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=79076
+2026-08-19 16:09:20 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=7
+2026-08-19 16:09:20 | INFO     | SeekWorker           | [SEEK START] generation=7 frame=79076
+2026-08-19 16:09:20 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=7
+2026-08-19 16:09:20 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-19 16:09:20 | INFO     | SeekWorker           | [SEEK END] generation=7 frame=79076
+2026-08-19 16:09:21 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:23 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:25 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:27 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:28 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 16:09:29 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:29 | INFO     | MainThread           | [SEEK CANCEL CALL]
+2026-08-19 16:09:31 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:33 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'worker_alive': True, 'current_frame': 42, 'audio_clock': 80896}
+2026-08-19 16:09:33 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 16:09:33 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-19 16:09:33 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-19 16:09:33 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 16:09:33 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-19 16:09:33 | INFO     | MainThread           |   - SeekWorker (daemon=True, alive=True)
+2026-08-19 16:09:33 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-19 16:09:33 | INFO     | MainThread           |   - Dummy-3 (daemon=True, alive=True)
+2026-08-19 16:14:39 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-19 16:14:39 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 13:35:10 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:35:10 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 13:35:12 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:35:12 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:35:12 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 13:35:13 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-20 13:35:41 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-20 13:35:41 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-20 13:35:41 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 13:35:41 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 13:35:41 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-20 13:36:00 | CRITICAL | MainThread           | Необработанное исключение в главном потоке:
+['Traceback (most recent call last):\n', '  File "C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\player_window.py", line 895, in _on_tray_activated\n    def _on_tray_activated(self, reason):\n    \n', 'KeyboardInterrupt\n']
+2026-08-20 13:37:05 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 13:37:05 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 13:40:28 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:40:28 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 13:40:32 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:40:32 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 13:40:32 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 13:40:37 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 13:40:37 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 13:40:37 | INFO     | MainThread           |   - SeekCoordinator (daemon=True, alive=True)
+2026-08-20 16:03:07 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:03:07 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:03:59 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:03:59 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:04:01 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:04:01 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:04:01 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:04:14 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:04:14 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:04:14 | INFO     | MainThread           |   - SeekCoordinator (daemon=True, alive=True)
+2026-08-20 16:04:23 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:04:23 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:07:23 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:07:23 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:07:26 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:07:26 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:07:26 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:07:27 | DEBUG    | MainThread           | Метод apply_seek_buffer не найден у PlaybackEngine, обёртка пропущена
+2026-08-20 16:07:27 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:27 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-20 16:07:29 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:31 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:33 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:35 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:37 | INFO     | MainThread           | [STREAM SEEK] frame=24255 callback=True
+2026-08-20 16:07:37 | INFO     | MainThread           | [PLAYBACK SEEK] frame=24255 gen_before=0
+2026-08-20 16:07:37 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=24255
+2026-08-20 16:07:37 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-20 16:07:37 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=24255 gen=1
+2026-08-20 16:07:37 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-20 16:07:37 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=24255
+2026-08-20 16:07:37 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:07:37 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:07:37 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:busy(buf=7,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:37 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:07:39 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 24257, 'audio_clock': 46573440, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:41 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 24303, 'audio_clock': 46662528, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:43 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 24354, 'audio_clock': 46759808, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:45 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 24404, 'audio_clock': 46856064, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:46 | INFO     | MainThread           | [STREAM SEEK] frame=76640 callback=True
+2026-08-20 16:07:47 | INFO     | MainThread           | [PLAYBACK SEEK] frame=76640 gen_before=1
+2026-08-20 16:07:47 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=76640
+2026-08-20 16:07:47 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-20 16:07:47 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=76640 gen=2
+2026-08-20 16:07:47 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-20 16:07:47 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=76640
+2026-08-20 16:07:47 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:07:47 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:07:47 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:07:47 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 76626, 'audio_clock': 147121920, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:49 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 76662, 'audio_clock': 147192576, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:51 | INFO     | MainThread           | [STREAM SEEK] frame=70201 callback=True
+2026-08-20 16:07:51 | INFO     | MainThread           | [PLAYBACK SEEK] frame=70201 gen_before=2
+2026-08-20 16:07:51 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=70201
+2026-08-20 16:07:51 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=3
+2026-08-20 16:07:51 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=70201 gen=3
+2026-08-20 16:07:51 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=3
+2026-08-20 16:07:51 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=70201
+2026-08-20 16:07:51 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:07:51 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:07:51 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:07:51 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 70191, 'audio_clock': 134766720, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:53 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 70220, 'audio_clock': 134823040, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:53 | INFO     | MainThread           | [STREAM SEEK] frame=41758 callback=True
+2026-08-20 16:07:54 | INFO     | MainThread           | [PLAYBACK SEEK] frame=41758 gen_before=3
+2026-08-20 16:07:54 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=41758
+2026-08-20 16:07:54 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=4
+2026-08-20 16:07:54 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=41758 gen=4
+2026-08-20 16:07:54 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=4
+2026-08-20 16:07:54 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=41758
+2026-08-20 16:07:54 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:07:54 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:07:54 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:07:55 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 41770, 'audio_clock': 80198784, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:56 | INFO     | MainThread           | [STREAM SEEK] frame=10127 callback=True
+2026-08-20 16:07:56 | INFO     | MainThread           | [PLAYBACK SEEK] frame=10127 gen_before=4
+2026-08-20 16:07:56 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=10127
+2026-08-20 16:07:56 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=5
+2026-08-20 16:07:56 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=10127 gen=5
+2026-08-20 16:07:56 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=5
+2026-08-20 16:07:56 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=10127
+2026-08-20 16:07:56 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:07:56 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:07:56 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:07:57 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 10133, 'audio_clock': 19456384, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:07:59 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 10183, 'audio_clock': 19552640, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:01 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 10234, 'audio_clock': 19650944, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:03 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 10285, 'audio_clock': 19747200, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:05 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 10334, 'audio_clock': 19842432, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:06 | INFO     | MainThread           | [STREAM SEEK] frame=28756 callback=True
+2026-08-20 16:08:07 | INFO     | MainThread           | [PLAYBACK SEEK] frame=28756 gen_before=5
+2026-08-20 16:08:07 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=28756
+2026-08-20 16:08:07 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=6
+2026-08-20 16:08:07 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=28756 gen=6
+2026-08-20 16:08:07 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=6
+2026-08-20 16:08:07 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=28756
+2026-08-20 16:08:07 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:07 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:07 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:07 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 28746, 'audio_clock': 55192320, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:09 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 28787, 'audio_clock': 55272192, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:11 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 28838, 'audio_clock': 55369472, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:13 | INFO     | MainThread           | [STREAM SEEK] frame=38070 callback=True
+2026-08-20 16:08:13 | INFO     | MainThread           | [PLAYBACK SEEK] frame=38070 gen_before=6
+2026-08-20 16:08:13 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=38070
+2026-08-20 16:08:13 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=7
+2026-08-20 16:08:13 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=38070 gen=7
+2026-08-20 16:08:13 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=7
+2026-08-20 16:08:13 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:13 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=38070
+2026-08-20 16:08:13 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:13 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:13 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 38061, 'audio_clock': 73077120, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:15 | INFO     | MainThread           | [STREAM SEEK] frame=47259 callback=True
+2026-08-20 16:08:15 | INFO     | MainThread           | [PLAYBACK SEEK] frame=47259 gen_before=7
+2026-08-20 16:08:15 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=47259
+2026-08-20 16:08:15 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=8
+2026-08-20 16:08:15 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=47259 gen=8
+2026-08-20 16:08:15 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=8
+2026-08-20 16:08:15 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=47259
+2026-08-20 16:08:15 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:15 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:15 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:15 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 47256, 'audio_clock': 90731520, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:17 | INFO     | MainThread           | [STREAM SEEK] frame=57886 callback=True
+2026-08-20 16:08:17 | INFO     | MainThread           | [PLAYBACK SEEK] frame=57886 gen_before=8
+2026-08-20 16:08:17 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=57886
+2026-08-20 16:08:17 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=9
+2026-08-20 16:08:17 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=57886 gen=9
+2026-08-20 16:08:17 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=9
+2026-08-20 16:08:17 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=57886
+2026-08-20 16:08:17 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:17 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:17 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 47276, 'audio_clock': 90770432, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:18 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:19 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 57902, 'audio_clock': 111172096, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:20 | INFO     | MainThread           | [STREAM SEEK] frame=16753 callback=True
+2026-08-20 16:08:20 | INFO     | MainThread           | [PLAYBACK SEEK] frame=16753 gen_before=9
+2026-08-20 16:08:20 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=16753
+2026-08-20 16:08:20 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=10
+2026-08-20 16:08:20 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=16753 gen=10
+2026-08-20 16:08:20 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=10
+2026-08-20 16:08:20 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=16753
+2026-08-20 16:08:20 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:20 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:20 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:22 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 16756, 'audio_clock': 32172544, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:24 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 16805, 'audio_clock': 32266752, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:26 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 16856, 'audio_clock': 32364032, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:28 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 16906, 'audio_clock': 32461312, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:30 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 16957, 'audio_clock': 32558592, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:32 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 17007, 'audio_clock': 32653824, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:33 | INFO     | MainThread           | [STREAM SEEK] frame=35694 callback=True
+2026-08-20 16:08:33 | INFO     | MainThread           | [PLAYBACK SEEK] frame=35694 gen_before=10
+2026-08-20 16:08:33 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=35694
+2026-08-20 16:08:33 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=11
+2026-08-20 16:08:33 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=35694 gen=11
+2026-08-20 16:08:33 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=11
+2026-08-20 16:08:33 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:33 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=35694
+2026-08-20 16:08:33 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:33 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:34 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 35691, 'audio_clock': 68526720, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:36 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 35722, 'audio_clock': 68587136, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:36 | INFO     | MainThread           | [STREAM SEEK] frame=54511 callback=True
+2026-08-20 16:08:36 | INFO     | MainThread           | [PLAYBACK SEEK] frame=54511 gen_before=11
+2026-08-20 16:08:36 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=54511
+2026-08-20 16:08:36 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=12
+2026-08-20 16:08:36 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=54511 gen=12
+2026-08-20 16:08:36 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=12
+2026-08-20 16:08:36 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=54511
+2026-08-20 16:08:36 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:36 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:36 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:38 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 54525, 'audio_clock': 104689024, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:39 | INFO     | MainThread           | [STREAM SEEK] frame=67701 callback=True
+2026-08-20 16:08:39 | INFO     | MainThread           | [PLAYBACK SEEK] frame=67701 gen_before=12
+2026-08-20 16:08:39 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=67701
+2026-08-20 16:08:39 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=13
+2026-08-20 16:08:39 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=67701 gen=13
+2026-08-20 16:08:39 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=13
+2026-08-20 16:08:39 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=67701
+2026-08-20 16:08:39 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:08:39 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:08:39 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:08:40 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 67701, 'audio_clock': 129985920, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:42 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 67746, 'audio_clock': 130073984, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:43 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-20 16:08:43 | INFO     | MainThread           | [SEEK CANCEL CALL]
+2026-08-20 16:08:44 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'current_frame': 67785, 'audio_clock': 130147712, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:46 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'current_frame': 67785, 'audio_clock': 130147712, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:08:47 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-20 16:08:47 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:08:47 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - SeekCoordinator (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-6 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-12 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-15 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-17 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-21 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-25 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-27 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-29 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-36 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-38 (daemon=True, alive=True)
+2026-08-20 16:08:47 | INFO     | MainThread           |   - Dummy-41 (daemon=True, alive=True)
+2026-08-20 16:08:54 | CRITICAL | MainThread           | Необработанное исключение в главном потоке:
+['Traceback (most recent call last):\n', '  File "C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\player_window.py", line 895, in _on_tray_activated\n    def _on_tray_activated(self, reason):\n    \n', 'KeyboardInterrupt\n']
+2026-08-20 16:08:56 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:08:56 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:09:16 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:09:16 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:09:20 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:09:20 | INFO     | MainThread           | Qt message handler установлен
+2026-08-20 16:09:20 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
+2026-08-20 16:09:22 | DEBUG    | MainThread           | Метод apply_seek_buffer не найден у PlaybackEngine, обёртка пропущена
+2026-08-20 16:09:22 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:22 | INFO     | MainThread           | Мониторинг Seek прикреплён к StreamController
+2026-08-20 16:09:24 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:26 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 0, 'audio_clock': 0, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:27 | INFO     | MainThread           | [STREAM SEEK] frame=48063 callback=True
+2026-08-20 16:09:27 | INFO     | MainThread           | [PLAYBACK SEEK] frame=48063 gen_before=0
+2026-08-20 16:09:27 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=48063
+2026-08-20 16:09:27 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=1
+2026-08-20 16:09:27 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=48063 gen=1
+2026-08-20 16:09:27 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=1
+2026-08-20 16:09:27 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=48063
+2026-08-20 16:09:27 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:27 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:27 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:28 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 48066, 'audio_clock': 92286720, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:30 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 48106, 'audio_clock': 92364544, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:32 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 48156, 'audio_clock': 92460800, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:34 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 48207, 'audio_clock': 92559104, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:36 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 48258, 'audio_clock': 92655360, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:37 | INFO     | MainThread           | [STREAM SEEK] frame=67963 callback=True
+2026-08-20 16:09:38 | INFO     | MainThread           | [PLAYBACK SEEK] frame=67963 gen_before=1
+2026-08-20 16:09:38 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=67963
+2026-08-20 16:09:38 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=2
+2026-08-20 16:09:38 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=67963 gen=2
+2026-08-20 16:09:38 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=2
+2026-08-20 16:09:38 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=67963
+2026-08-20 16:09:38 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:38 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:38 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:38 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 67955, 'audio_clock': 130473600, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:40 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 67993, 'audio_clock': 130547328, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:41 | INFO     | MainThread           | [STREAM SEEK] frame=68036 callback=True
+2026-08-20 16:09:41 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68036 gen_before=2
+2026-08-20 16:09:41 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68036
+2026-08-20 16:09:41 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=3
+2026-08-20 16:09:41 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68036 gen=3
+2026-08-20 16:09:41 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=3
+2026-08-20 16:09:41 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68036
+2026-08-20 16:09:41 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:41 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:41 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:42 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68033, 'audio_clock': 130624768, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:44 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68082, 'audio_clock': 130718976, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:45 | INFO     | MainThread           | [STREAM SEEK] frame=68121 callback=True
+2026-08-20 16:09:45 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68121 gen_before=3
+2026-08-20 16:09:45 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68121
+2026-08-20 16:09:45 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=4
+2026-08-20 16:09:45 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68121 gen=4
+2026-08-20 16:09:45 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=4
+2026-08-20 16:09:45 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68121
+2026-08-20 16:09:45 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:45 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:45 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:46 | INFO     | MainThread           | [STREAM SEEK] frame=68145 callback=True
+2026-08-20 16:09:46 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68145 gen_before=4
+2026-08-20 16:09:46 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68145
+2026-08-20 16:09:46 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=5
+2026-08-20 16:09:46 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68145 gen=5
+2026-08-20 16:09:46 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=5
+2026-08-20 16:09:46 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68145
+2026-08-20 16:09:46 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:46 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:46 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:46 | INFO     | MainThread           | [STREAM SEEK] frame=68160 callback=True
+2026-08-20 16:09:46 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68160 gen_before=5
+2026-08-20 16:09:46 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68160
+2026-08-20 16:09:46 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=6
+2026-08-20 16:09:46 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68160 gen=6
+2026-08-20 16:09:46 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=6
+2026-08-20 16:09:46 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68160
+2026-08-20 16:09:46 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:46 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68135, 'audio_clock': 130819200, 'workers': 'W0:busy(buf=2,alive=True) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:46 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:47 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:47 | INFO     | MainThread           | [STREAM SEEK] frame=68175 callback=True
+2026-08-20 16:09:47 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68175 gen_before=6
+2026-08-20 16:09:47 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68175
+2026-08-20 16:09:47 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=7
+2026-08-20 16:09:47 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68175 gen=7
+2026-08-20 16:09:47 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=7
+2026-08-20 16:09:47 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68175
+2026-08-20 16:09:47 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:47 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:47 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:47 | INFO     | MainThread           | [STREAM SEEK] frame=68190 callback=True
+2026-08-20 16:09:47 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68190 gen_before=7
+2026-08-20 16:09:47 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68190
+2026-08-20 16:09:47 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=8
+2026-08-20 16:09:47 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68190 gen=8
+2026-08-20 16:09:47 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=8
+2026-08-20 16:09:47 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68190
+2026-08-20 16:09:47 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:47 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:47 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK] frame=68205 callback=True
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68205 gen_before=8
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68205
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=9
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68205 gen=9
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=9
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68205
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK] frame=68220 callback=True
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68220 gen_before=9
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68220
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=10
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68220 gen=10
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=10
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68220
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK] frame=68235 callback=True
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68235 gen_before=10
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68235
+2026-08-20 16:09:48 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=11
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68235 gen=11
+2026-08-20 16:09:48 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=11
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68235
+2026-08-20 16:09:48 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:48 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:48 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:48 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68210, 'audio_clock': 130963200, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK] frame=68250 callback=True
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68250 gen_before=11
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68250
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=12
+2026-08-20 16:09:49 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68250 gen=12
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=12
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68250
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:49 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK] frame=68265 callback=True
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68265 gen_before=12
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68265
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=13
+2026-08-20 16:09:49 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68265 gen=13
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=13
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68265
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:49 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK] frame=68280 callback=True
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68280 gen_before=13
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68280
+2026-08-20 16:09:49 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=14
+2026-08-20 16:09:49 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68280 gen=14
+2026-08-20 16:09:49 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=14
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68280
+2026-08-20 16:09:49 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:49 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:50 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:50 | INFO     | MainThread           | [STREAM SEEK] frame=68295 callback=True
+2026-08-20 16:09:50 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68295 gen_before=14
+2026-08-20 16:09:50 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68295
+2026-08-20 16:09:50 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=15
+2026-08-20 16:09:50 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68295 gen=15
+2026-08-20 16:09:50 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=15
+2026-08-20 16:09:50 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68295
+2026-08-20 16:09:50 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:50 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:50 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:50 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68288, 'audio_clock': 131114368, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:52 | INFO     | MainThread           | [STREAM SEEK] frame=68352 callback=True
+2026-08-20 16:09:52 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68352 gen_before=15
+2026-08-20 16:09:52 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68352
+2026-08-20 16:09:52 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=16
+2026-08-20 16:09:52 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68352 gen=16
+2026-08-20 16:09:52 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=16
+2026-08-20 16:09:52 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68352
+2026-08-20 16:09:52 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:52 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:52 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:52 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68345, 'audio_clock': 131222400, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:52 | INFO     | MainThread           | [STREAM SEEK] frame=68370 callback=True
+2026-08-20 16:09:52 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68370 gen_before=16
+2026-08-20 16:09:52 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68370
+2026-08-20 16:09:52 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=17
+2026-08-20 16:09:52 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68370 gen=17
+2026-08-20 16:09:52 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=17
+2026-08-20 16:09:52 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68370
+2026-08-20 16:09:52 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK] frame=68385 callback=True
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68385 gen_before=17
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68385
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=18
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68385 gen=18
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=18
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68385
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK] frame=68400 callback=True
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68400 gen_before=18
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68400
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=19
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68400 gen=19
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=19
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68400
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK] frame=68415 callback=True
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68415 gen_before=19
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68415
+2026-08-20 16:09:53 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=20
+2026-08-20 16:09:53 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68415 gen=20
+2026-08-20 16:09:53 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=20
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68415
+2026-08-20 16:09:53 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:53 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:54 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:54 | INFO     | MainThread           | [STREAM SEEK] frame=68430 callback=True
+2026-08-20 16:09:54 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68430 gen_before=20
+2026-08-20 16:09:54 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68430
+2026-08-20 16:09:54 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=21
+2026-08-20 16:09:54 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68430 gen=21
+2026-08-20 16:09:54 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=21
+2026-08-20 16:09:54 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68430
+2026-08-20 16:09:54 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:54 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:54 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:54 | INFO     | MainThread           | [STREAM SEEK] frame=68445 callback=True
+2026-08-20 16:09:54 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68445 gen_before=21
+2026-08-20 16:09:54 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68445
+2026-08-20 16:09:54 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=22
+2026-08-20 16:09:54 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68445 gen=22
+2026-08-20 16:09:54 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=22
+2026-08-20 16:09:54 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68445
+2026-08-20 16:09:54 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:54 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:54 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:54 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68435, 'audio_clock': 131395200, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:56 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68485, 'audio_clock': 131491456, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:58 | INFO     | MainThread           | [STREAM SEEK] frame=68528 callback=True
+2026-08-20 16:09:58 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68528 gen_before=22
+2026-08-20 16:09:58 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68528
+2026-08-20 16:09:58 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=23
+2026-08-20 16:09:58 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68528 gen=23
+2026-08-20 16:09:58 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=23
+2026-08-20 16:09:58 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68528
+2026-08-20 16:09:58 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:58 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:58 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:58 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68525, 'audio_clock': 131568000, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:09:59 | INFO     | MainThread           | [STREAM SEEK] frame=68550 callback=True
+2026-08-20 16:09:59 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68550 gen_before=23
+2026-08-20 16:09:59 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68550
+2026-08-20 16:09:59 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=24
+2026-08-20 16:09:59 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68550 gen=24
+2026-08-20 16:09:59 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=24
+2026-08-20 16:09:59 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68550
+2026-08-20 16:09:59 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:59 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:09:59 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:09:59 | INFO     | MainThread           | [STREAM SEEK] frame=68565 callback=True
+2026-08-20 16:09:59 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68565 gen_before=24
+2026-08-20 16:09:59 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68565
+2026-08-20 16:09:59 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=25
+2026-08-20 16:09:59 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68565 gen=25
+2026-08-20 16:09:59 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=25
+2026-08-20 16:09:59 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68565
+2026-08-20 16:09:59 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:09:59 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK] frame=68580 callback=True
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68580 gen_before=25
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68580
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=26
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68580 gen=26
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=26
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68580
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK] frame=68595 callback=True
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68595 gen_before=26
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68595
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=27
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68595 gen=27
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=27
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68595
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK] frame=68610 callback=True
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68610 gen_before=27
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68610
+2026-08-20 16:10:00 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=28
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68610 gen=28
+2026-08-20 16:10:00 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=28
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68610
+2026-08-20 16:10:00 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:00 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:00 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:00 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68600, 'audio_clock': 131712000, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:02 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68600, 'audio_clock': 131712000, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:04 | INFO     | MainThread           | [STREAM SEEK] frame=68625 callback=True
+2026-08-20 16:10:04 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68625 gen_before=28
+2026-08-20 16:10:04 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68625
+2026-08-20 16:10:04 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=29
+2026-08-20 16:10:04 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68625 gen=29
+2026-08-20 16:10:04 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=29
+2026-08-20 16:10:04 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68625
+2026-08-20 16:10:04 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:04 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:04 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:04 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68600, 'audio_clock': 131712000, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK] frame=68640 callback=True
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68640 gen_before=29
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68640
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=30
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68640 gen=30
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=30
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68640
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK] frame=68655 callback=True
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68655 gen_before=30
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68655
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=31
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68655 gen=31
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=31
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68655
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK] frame=68670 callback=True
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68670 gen_before=31
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68670
+2026-08-20 16:10:05 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=32
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68670 gen=32
+2026-08-20 16:10:05 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=32
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68670
+2026-08-20 16:10:05 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:05 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:05 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK] frame=68685 callback=True
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68685 gen_before=32
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68685
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=33
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68685 gen=33
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=33
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68685
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK] frame=68685 callback=True
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68685 gen_before=33
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68685
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=34
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=34
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68685 gen=34
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68685
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK] frame=68700 callback=True
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68700 gen_before=34
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68700
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=35
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68700 gen=35
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=35
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68700
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK] frame=68715 callback=True
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68715 gen_before=35
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68715
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=36
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68715 gen=36
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=36
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68715
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK] frame=68730 callback=True
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68730 gen_before=36
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68730
+2026-08-20 16:10:06 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=37
+2026-08-20 16:10:06 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68730 gen=37
+2026-08-20 16:10:06 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=37
+2026-08-20 16:10:06 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68730
+2026-08-20 16:10:06 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:06 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68705, 'audio_clock': 131913600, 'workers': 'W0:busy(buf=0,alive=True) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK] frame=68745 callback=True
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68745 gen_before=37
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68745
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=38
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68745 gen=38
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=38
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68745
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK] frame=68760 callback=True
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68760 gen_before=38
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68760
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=39
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68760 gen=39
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=39
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68760
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK] frame=68775 callback=True
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68775 gen_before=39
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68775
+2026-08-20 16:10:07 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=40
+2026-08-20 16:10:07 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68775 gen=40
+2026-08-20 16:10:07 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=40
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68775
+2026-08-20 16:10:07 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:07 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK] frame=68790 callback=True
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68790 gen_before=40
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68790
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=41
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68790 gen=41
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=41
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68790
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK] frame=68805 callback=True
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68805 gen_before=41
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68805
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=42
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68805 gen=42
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=42
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68805
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK] frame=68820 callback=True
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68820 gen_before=42
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68820
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=43
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68820 gen=43
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=43
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68820
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK] frame=68820 callback=True
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68820 gen_before=43
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68820
+2026-08-20 16:10:08 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=44
+2026-08-20 16:10:08 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68820 gen=44
+2026-08-20 16:10:08 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=44
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68820
+2026-08-20 16:10:08 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:08 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:08 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 68810, 'audio_clock': 132115200, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:09 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:09 | INFO     | MainThread           | [STREAM SEEK] frame=68835 callback=True
+2026-08-20 16:10:09 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68835 gen_before=44
+2026-08-20 16:10:09 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68835
+2026-08-20 16:10:09 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=45
+2026-08-20 16:10:09 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=45
+2026-08-20 16:10:09 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:09 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68835 gen=45
+2026-08-20 16:10:09 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68835
+2026-08-20 16:10:09 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:09 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:09 | INFO     | MainThread           | [STREAM SEEK] frame=68835 callback=True
+2026-08-20 16:10:09 | INFO     | MainThread           | [PLAYBACK SEEK] frame=68835 gen_before=45
+2026-08-20 16:10:09 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=68835
+2026-08-20 16:10:09 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=46
+2026-08-20 16:10:09 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=46
+2026-08-20 16:10:09 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:09 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=68835 gen=46
+2026-08-20 16:10:09 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=68835
+2026-08-20 16:10:09 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:09 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:10 | INFO     | MainThread           | [STREAM SEEK] frame=69075 callback=True
+2026-08-20 16:10:10 | INFO     | MainThread           | [PLAYBACK SEEK] frame=69075 gen_before=46
+2026-08-20 16:10:10 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=69075
+2026-08-20 16:10:10 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=47
+2026-08-20 16:10:10 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=69075 gen=47
+2026-08-20 16:10:10 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=47
+2026-08-20 16:10:10 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=69075
+2026-08-20 16:10:10 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:10 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:10 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:10 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 69065, 'audio_clock': 132604800, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:11 | INFO     | MainThread           | [STREAM SEEK] frame=69315 callback=True
+2026-08-20 16:10:11 | INFO     | MainThread           | [PLAYBACK SEEK] frame=69315 gen_before=47
+2026-08-20 16:10:11 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=69315
+2026-08-20 16:10:11 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=48
+2026-08-20 16:10:11 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=69315 gen=48
+2026-08-20 16:10:11 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=48
+2026-08-20 16:10:11 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=69315
+2026-08-20 16:10:11 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:11 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:11 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:12 | INFO     | MainThread           | [STREAM SEEK] frame=69559 callback=True
+2026-08-20 16:10:12 | INFO     | MainThread           | [PLAYBACK SEEK] frame=69559 gen_before=48
+2026-08-20 16:10:12 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=69559
+2026-08-20 16:10:12 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=49
+2026-08-20 16:10:12 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=69559 gen=49
+2026-08-20 16:10:12 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=49
+2026-08-20 16:10:12 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:12 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=69559
+2026-08-20 16:10:12 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:12 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:13 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 69549, 'audio_clock': 133534080, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:14 | INFO     | MainThread           | [STREAM SEEK] frame=69799 callback=True
+2026-08-20 16:10:14 | INFO     | MainThread           | [PLAYBACK SEEK] frame=69799 gen_before=49
+2026-08-20 16:10:14 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=69799
+2026-08-20 16:10:14 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=50
+2026-08-20 16:10:14 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=69799 gen=50
+2026-08-20 16:10:14 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=50
+2026-08-20 16:10:14 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=69799
+2026-08-20 16:10:14 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:14 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:14 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:15 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 69789, 'audio_clock': 133994880, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:15 | INFO     | MainThread           | [STREAM SEEK] frame=70039 callback=True
+2026-08-20 16:10:15 | INFO     | MainThread           | [PLAYBACK SEEK] frame=70039 gen_before=50
+2026-08-20 16:10:15 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=70039
+2026-08-20 16:10:15 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=51
+2026-08-20 16:10:15 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=70039 gen=51
+2026-08-20 16:10:15 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=51
+2026-08-20 16:10:15 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=70039
+2026-08-20 16:10:15 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:16 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:16 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:17 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 70029, 'audio_clock': 134455680, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:17 | INFO     | MainThread           | [STREAM SEEK] frame=70279 callback=True
+2026-08-20 16:10:17 | INFO     | MainThread           | [PLAYBACK SEEK] frame=70279 gen_before=51
+2026-08-20 16:10:17 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=70279
+2026-08-20 16:10:17 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=52
+2026-08-20 16:10:17 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=70279 gen=52
+2026-08-20 16:10:17 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=52
+2026-08-20 16:10:17 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=70279
+2026-08-20 16:10:17 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:17 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:17 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:18 | INFO     | MainThread           | [STREAM SEEK] frame=70519 callback=True
+2026-08-20 16:10:18 | INFO     | MainThread           | [PLAYBACK SEEK] frame=70519 gen_before=52
+2026-08-20 16:10:18 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=70519
+2026-08-20 16:10:18 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=53
+2026-08-20 16:10:18 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=70519 gen=53
+2026-08-20 16:10:18 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=53
+2026-08-20 16:10:18 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=70519
+2026-08-20 16:10:18 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:18 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:18 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:19 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 70509, 'audio_clock': 135377280, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:20 | INFO     | MainThread           | [STREAM SEEK] frame=70759 callback=True
+2026-08-20 16:10:20 | INFO     | MainThread           | [PLAYBACK SEEK] frame=70759 gen_before=53
+2026-08-20 16:10:20 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=70759
+2026-08-20 16:10:20 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=54
+2026-08-20 16:10:20 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=70759 gen=54
+2026-08-20 16:10:20 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=54
+2026-08-20 16:10:20 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=70759
+2026-08-20 16:10:20 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:21 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:21 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 70509, 'audio_clock': 135377280, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:21 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:21 | INFO     | MainThread           | [STREAM SEEK] frame=71006 callback=True
+2026-08-20 16:10:21 | INFO     | MainThread           | [PLAYBACK SEEK] frame=71006 gen_before=54
+2026-08-20 16:10:21 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=71006
+2026-08-20 16:10:21 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=55
+2026-08-20 16:10:21 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=71006 gen=55
+2026-08-20 16:10:21 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=55
+2026-08-20 16:10:21 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=71006
+2026-08-20 16:10:21 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:21 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:21 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:22 | INFO     | MainThread           | [STREAM SEEK] frame=71246 callback=True
+2026-08-20 16:10:22 | INFO     | MainThread           | [PLAYBACK SEEK] frame=71246 gen_before=55
+2026-08-20 16:10:22 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=71246
+2026-08-20 16:10:22 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=56
+2026-08-20 16:10:22 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=71246 gen=56
+2026-08-20 16:10:22 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=56
+2026-08-20 16:10:22 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=71246
+2026-08-20 16:10:22 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:22 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:22 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:23 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 71236, 'audio_clock': 136773120, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:24 | INFO     | MainThread           | [STREAM SEEK] frame=71486 callback=True
+2026-08-20 16:10:24 | INFO     | MainThread           | [PLAYBACK SEEK] frame=71486 gen_before=56
+2026-08-20 16:10:24 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=71486
+2026-08-20 16:10:24 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=57
+2026-08-20 16:10:24 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=71486 gen=57
+2026-08-20 16:10:24 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=57
+2026-08-20 16:10:24 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=71486
+2026-08-20 16:10:24 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:24 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:24 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:24 | INFO     | MainThread           | [STREAM SEEK] frame=71723 callback=True
+2026-08-20 16:10:25 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': True, 'growth_refresh': True, 'closed': False, 'current_frame': 71473, 'audio_clock': 137228160, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:25 | INFO     | MainThread           | [PLAYBACK SEEK] frame=71723 gen_before=57
+2026-08-20 16:10:25 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=71723
+2026-08-20 16:10:25 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=58
+2026-08-20 16:10:25 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=71723 gen=58
+2026-08-20 16:10:25 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=58
+2026-08-20 16:10:25 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=71723
+2026-08-20 16:10:25 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:25 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:25 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:26 | INFO     | MainThread           | [STREAM SEEK] frame=71963 callback=True
+2026-08-20 16:10:26 | INFO     | MainThread           | [PLAYBACK SEEK] frame=71963 gen_before=58
+2026-08-20 16:10:26 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=71963
+2026-08-20 16:10:26 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=59
+2026-08-20 16:10:26 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=71963 gen=59
+2026-08-20 16:10:26 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=59
+2026-08-20 16:10:26 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=71963
+2026-08-20 16:10:26 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:26 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:26 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:26 | INFO     | MainThread           | [STREAM SEEK] frame=72203 callback=True
+2026-08-20 16:10:26 | INFO     | MainThread           | [PLAYBACK SEEK] frame=72203 gen_before=59
+2026-08-20 16:10:26 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=72203
+2026-08-20 16:10:26 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=60
+2026-08-20 16:10:26 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=72203 gen=60
+2026-08-20 16:10:26 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=60
+2026-08-20 16:10:26 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=72203
+2026-08-20 16:10:26 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:26 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:27 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 71953, 'audio_clock': 138149760, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:27 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:27 | INFO     | MainThread           | [STREAM SEEK] frame=72443 callback=True
+2026-08-20 16:10:27 | INFO     | MainThread           | [PLAYBACK SEEK] frame=72443 gen_before=60
+2026-08-20 16:10:27 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=72443
+2026-08-20 16:10:27 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=61
+2026-08-20 16:10:27 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=72443 gen=61
+2026-08-20 16:10:27 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=61
+2026-08-20 16:10:27 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=72443
+2026-08-20 16:10:27 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:27 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:27 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:28 | INFO     | MainThread           | [STREAM SEEK] frame=72683 callback=True
+2026-08-20 16:10:28 | INFO     | MainThread           | [PLAYBACK SEEK] frame=72683 gen_before=61
+2026-08-20 16:10:28 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=72683
+2026-08-20 16:10:28 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=62
+2026-08-20 16:10:28 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=72683 gen=62
+2026-08-20 16:10:28 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=62
+2026-08-20 16:10:28 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=72683
+2026-08-20 16:10:28 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:28 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:28 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:29 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 72673, 'audio_clock': 139532160, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:29 | INFO     | MainThread           | [STREAM SEEK] frame=72923 callback=True
+2026-08-20 16:10:29 | INFO     | MainThread           | [PLAYBACK SEEK] frame=72923 gen_before=62
+2026-08-20 16:10:29 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=72923
+2026-08-20 16:10:29 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=63
+2026-08-20 16:10:29 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=72923 gen=63
+2026-08-20 16:10:29 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=63
+2026-08-20 16:10:29 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=72923
+2026-08-20 16:10:29 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:29 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:30 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:30 | INFO     | MainThread           | [STREAM SEEK] frame=73163 callback=True
+2026-08-20 16:10:30 | INFO     | MainThread           | [PLAYBACK SEEK] frame=73163 gen_before=63
+2026-08-20 16:10:30 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=73163
+2026-08-20 16:10:30 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=64
+2026-08-20 16:10:30 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=73163 gen=64
+2026-08-20 16:10:30 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=64
+2026-08-20 16:10:30 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=73163
+2026-08-20 16:10:30 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:30 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:31 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 72913, 'audio_clock': 139992960, 'workers': 'W0:busy(buf=13,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:31 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:31 | INFO     | MainThread           | [STREAM SEEK] frame=73403 callback=True
+2026-08-20 16:10:31 | INFO     | MainThread           | [PLAYBACK SEEK] frame=73403 gen_before=64
+2026-08-20 16:10:31 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=73403
+2026-08-20 16:10:31 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=65
+2026-08-20 16:10:31 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=73403 gen=65
+2026-08-20 16:10:31 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=65
+2026-08-20 16:10:31 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=73403
+2026-08-20 16:10:31 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:31 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:31 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:32 | INFO     | MainThread           | [STREAM SEEK] frame=73643 callback=True
+2026-08-20 16:10:32 | INFO     | MainThread           | [PLAYBACK SEEK] frame=73643 gen_before=65
+2026-08-20 16:10:32 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=73643
+2026-08-20 16:10:32 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=66
+2026-08-20 16:10:32 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=73643 gen=66
+2026-08-20 16:10:32 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=66
+2026-08-20 16:10:32 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=73643
+2026-08-20 16:10:32 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:32 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:32 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:33 | INFO     | MainThread           | [STREAM SEEK] frame=73883 callback=True
+2026-08-20 16:10:33 | INFO     | MainThread           | [PLAYBACK SEEK] frame=73883 gen_before=66
+2026-08-20 16:10:33 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=73883
+2026-08-20 16:10:33 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=67
+2026-08-20 16:10:33 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=73883 gen=67
+2026-08-20 16:10:33 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=67
+2026-08-20 16:10:33 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=73883
+2026-08-20 16:10:33 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:33 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 73633, 'audio_clock': 141375360, 'workers': 'W0:busy(buf=0,alive=True) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:33 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:33 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:33 | INFO     | MainThread           | [STREAM SEEK] frame=74123 callback=True
+2026-08-20 16:10:33 | INFO     | MainThread           | [PLAYBACK SEEK] frame=74123 gen_before=67
+2026-08-20 16:10:33 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=74123
+2026-08-20 16:10:33 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=68
+2026-08-20 16:10:33 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=74123 gen=68
+2026-08-20 16:10:33 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=68
+2026-08-20 16:10:33 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=74123
+2026-08-20 16:10:33 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:34 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:34 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:35 | INFO     | MainThread           | [STREAM SEEK] frame=74363 callback=True
+2026-08-20 16:10:35 | INFO     | MainThread           | [PLAYBACK SEEK] frame=74363 gen_before=68
+2026-08-20 16:10:35 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=74363
+2026-08-20 16:10:35 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=69
+2026-08-20 16:10:35 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=74363 gen=69
+2026-08-20 16:10:35 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=69
+2026-08-20 16:10:35 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=74363
+2026-08-20 16:10:35 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:35 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': True, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 74113, 'audio_clock': 142296960, 'workers': 'W0:busy(buf=5,alive=True) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:35 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:35 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:36 | INFO     | MainThread           | [STREAM SEEK] frame=74603 callback=True
+2026-08-20 16:10:36 | INFO     | MainThread           | [PLAYBACK SEEK] frame=74603 gen_before=69
+2026-08-20 16:10:36 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=74603
+2026-08-20 16:10:36 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=70
+2026-08-20 16:10:36 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=74603 gen=70
+2026-08-20 16:10:36 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=70
+2026-08-20 16:10:36 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=74603
+2026-08-20 16:10:36 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:36 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:36 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:37 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 74593, 'audio_clock': 143218560, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:37 | INFO     | MainThread           | [STREAM SEEK] frame=74843 callback=True
+2026-08-20 16:10:37 | INFO     | MainThread           | [PLAYBACK SEEK] frame=74843 gen_before=70
+2026-08-20 16:10:37 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=74843
+2026-08-20 16:10:37 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=71
+2026-08-20 16:10:37 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=74843 gen=71
+2026-08-20 16:10:37 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=71
+2026-08-20 16:10:37 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=74843
+2026-08-20 16:10:37 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:37 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:37 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:38 | INFO     | MainThread           | [STREAM SEEK] frame=75083 callback=True
+2026-08-20 16:10:38 | INFO     | MainThread           | [PLAYBACK SEEK] frame=75083 gen_before=71
+2026-08-20 16:10:38 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=75083
+2026-08-20 16:10:38 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=72
+2026-08-20 16:10:38 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=75083 gen=72
+2026-08-20 16:10:38 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=72
+2026-08-20 16:10:38 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=75083
+2026-08-20 16:10:38 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:38 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:39 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:39 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 75073, 'audio_clock': 144140160, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:39 | INFO     | MainThread           | [STREAM SEEK] frame=75323 callback=True
+2026-08-20 16:10:39 | INFO     | MainThread           | [PLAYBACK SEEK] frame=75323 gen_before=72
+2026-08-20 16:10:39 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=75323
+2026-08-20 16:10:39 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=73
+2026-08-20 16:10:39 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=75323 gen=73
+2026-08-20 16:10:39 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=73
+2026-08-20 16:10:39 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=75323
+2026-08-20 16:10:39 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:39 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:39 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:41 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 75313, 'audio_clock': 144600960, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:43 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 75354, 'audio_clock': 144680832, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:45 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 75372, 'audio_clock': 144714624, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:45 | INFO     | MainThread           | [STREAM SEEK] frame=206756 callback=True
+2026-08-20 16:10:46 | INFO     | MainThread           | [PLAYBACK SEEK] frame=206756 gen_before=73
+2026-08-20 16:10:46 | INFO     | MainThread           | [SEEK ASYNC CALL] frame=206756
+2026-08-20 16:10:46 | INFO     | MainThread           | [SEEK REQUEST CREATED] generation=74
+2026-08-20 16:10:46 | INFO     | SeekCoordinator      | [SEEK DISPATCH] frame=206756 gen=74
+2026-08-20 16:10:46 | INFO     | MainThread           | [PLAYBACK SEEK RETURNED] gen_after=74
+2026-08-20 16:10:46 | INFO     | SeekWorker-0         | [WORKER TASK START] worker_id=0 frame=206756
+2026-08-20 16:10:46 | INFO     | MainThread           | [STREAM SEEK RETURNED]
+2026-08-20 16:10:46 | INFO     | SeekWorker-0         | [WORKER TASK END] worker_id=0
+2026-08-20 16:10:46 | INFO     | SeekCoordinator      | [WORKER FINALIZE] result=0
+2026-08-20 16:10:47 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206747, 'audio_clock': 396954240, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:49 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206767, 'audio_clock': 396994176, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:51 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206818, 'audio_clock': 397091456, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:53 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206868, 'audio_clock': 397187712, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:55 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206919, 'audio_clock': 397284992, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:57 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 206969, 'audio_clock': 397381248, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:10:59 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 207019, 'audio_clock': 397477504, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:11:01 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': False, 'current_frame': 207047, 'audio_clock': 397531776, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:11:01 | INFO     | MainThread           | [STREAM CLOSE START]
+2026-08-20 16:11:01 | INFO     | MainThread           | [SEEK CANCEL CALL]
+2026-08-20 16:11:03 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'current_frame': 207047, 'audio_clock': 397531776, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:11:05 | DEBUG    | SeekMonitorWatcher   | [STATE] {'seek_in_progress': False, 'sliding': False, 'growth_refresh': False, 'closed': True, 'current_frame': 207047, 'audio_clock': 397531776, 'workers': 'W0:free(buf=0,alive=False) | W1:free(buf=0,alive=False) | W2:free(buf=0,alive=False)'}
+2026-08-20 16:11:06 | INFO     | MainThread           | [STREAM CLOSE END]
+2026-08-20 16:11:06 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:11:06 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - SeekCoordinator (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - SeekMonitorWatcher (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-4 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-9 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-11 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-26 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-35 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-96 (daemon=True, alive=True)
+2026-08-20 16:11:06 | INFO     | MainThread           |   - Dummy-99 (daemon=True, alive=True)
+2026-08-20 16:11:13 | INFO     | MainThread           | Процесс завершается. Активные потоки:
+2026-08-20 16:11:13 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)
