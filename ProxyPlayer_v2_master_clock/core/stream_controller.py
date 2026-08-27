@@ -193,8 +193,25 @@ class StreamController:
                 self.buffer_main, None  # master_clock будет передан позже
             )
 
-            # 8. Создаём SeekEngine. Ридер не нужен, так как SeekEngine создаёт свой на каждый запрос.
-            self._seek_engine = SeekEngine(self._lazy_index, self.decoder, None)
+            # 8. Создаём SeekEngine. Ридер не нужен — SeekEngine создаёт свой
+            # на каждый запрос.
+            #
+            # Декодер передаётся ФАБРИКОЙ, а не готовым объектом: каждый
+            # seek-воркер должен иметь собственный Decoder. PyAV
+            # CodecContext не допускает параллельного использования, а
+            # воркеры декодируют одновременно друг с другом и с
+            # VideoDecoderStage конвейера, который работает непрерывно.
+            # Раньше сюда передавался self.decoder — тот же объект, что и у
+            # конвейера, то есть один нативный контекст на четыре потока.
+            def _make_decoder():
+                return Decoder(
+                    avcc, self.mp4_path,
+                    thread_type="AUTO", thread_count=0,
+                    skip_frame=False, gpu_mode="off"
+                )
+
+            self._seek_engine = SeekEngine(self._lazy_index,
+                                           decoder_factory=_make_decoder)
 
             # 9. Создаём PlaybackEngine (MasterClock будет передан позже)
             # ПРАВКА: lazy_index=self._lazy_index — без этого PlaybackEngine
@@ -321,26 +338,48 @@ class StreamController:
         elif self._paused:
             self.resume()
 
-    def seek_absolute(self, frame_idx: int, callback=None):
+    def seek_absolute(self, frame_idx: int, callback=None, on_error=None):
         """
         Перемотка в абсолютный кадр.
         :param frame_idx: целевой номер кадра (глобальный)
         :param callback: функция без аргументов, вызываемая после завершения seek
+        :param on_error: функция(str), вызываемая при любом неуспехе.
+
+        on_error обязателен для UI: без него вызывающий не отличает
+        "перемотка ещё выполняется" от "перемотка провалилась" и остаётся
+        заблокированным до собственного watchdog-таймаута (заглушка
+        "загрузка медиа" не снимается, Play не реагирует). Все ошибки этого
+        метода раньше уходили только в лог и наружу не сообщались.
         """
         if not self._ensure_ready():
+            self._report_seek_error(on_error, "плеер не готов")
             return
         try:
             if self._lazy_index is None:
+                self._report_seek_error(on_error, "индекс недоступен")
                 return
-            window = self._lazy_index.open_window(frame_idx)
-            if window is None:
-                logger.error(f"Не удалось открыть окно для кадра {frame_idx}")
-                return
-            self._playback.seek(frame_idx, window, on_complete=callback)
+            # Новый PlaybackEngine сам запустит seek через пул воркеров;
+            # окно открывается внутри SeekEngine, передавать его не нужно.
+            self._playback.seek(
+                frame_idx,
+                on_complete=callback,
+                on_error=lambda msg: self._report_seek_error(on_error, msg),
+            )
             self.playing = False
             self._paused = True
         except Exception as e:
             logger.exception(f"Ошибка в seek_absolute({frame_idx})")
+            self._report_seek_error(on_error, str(e))
+
+    @staticmethod
+    def _report_seek_error(on_error, message: str):
+        """Сообщает об ошибке перемотки наружу, не давая упасть самому колбэку."""
+        if on_error is None:
+            return
+        try:
+            on_error(message)
+        except Exception:
+            logger.exception("Ошибка в обработчике on_error перемотки")
 
     def seek_relative(self, delta_sec: float):
         if not self._ensure_ready():

@@ -110,16 +110,48 @@ class SeekRequest:
 
 
 class SeekWorker:
-    """Постоянный воркер с жёстко привязанным буфером."""
+    """
+    Постоянный воркер с жёстко привязанными буфером И декодером.
 
-    def __init__(self, worker_id: int):
+    Каждый воркер владеет СОБСТВЕННЫМ экземпляром Decoder на весь срок
+    жизни. Раньше все воркеры и VideoDecoderStage конвейера использовали
+    один общий Decoder, переданный из StreamController. PyAV CodecContext
+    не рассчитан на параллельное использование: одновременный вызов
+    decode_sample() из нескольких потоков (до трёх SeekWorker плюс
+    непрерывно работающий VideoDecoderStage) — обращение к одному
+    нативному контексту из разных потоков, что приводит к порче состояния
+    декодера и аварийному завершению процесса без исключения Python.
+
+    Декодер создаётся лениво, при первой задаче: если seek за сеанс не
+    выполнялся, лишние контексты не создаются. Закрывается в stop().
+    """
+
+    def __init__(self, worker_id: int, decoder_factory=None):
         self.id = worker_id
         self.buffer = FrameRingBuffer(max_frames=BUFFER_MAX_FRAMES)
+        self._decoder_factory = decoder_factory
+        self.decoder = None
         self.state = 'free'                      # 'free' | 'busy' | 'stuck'
         self.thread: Optional[threading.Thread] = None
         self.task_start_ts = 0.0
         self.current_request: Optional[SeekRequest] = None
         self.current_frame_idx = 0
+
+    def get_decoder(self):
+        """Возвращает собственный декодер воркера, создавая его при первом обращении."""
+        if self.decoder is None and self._decoder_factory is not None:
+            self.decoder = self._decoder_factory()
+            logger.info("SeekWorker %d: создан собственный декодер", self.id)
+        return self.decoder
+
+    def close_decoder(self):
+        """Освобождает нативный контекст декодера."""
+        if self.decoder is not None:
+            try:
+                self.decoder.close()
+            except Exception:
+                logger.exception("SeekWorker %d: ошибка закрытия декодера", self.id)
+            self.decoder = None
 
 
 class _SeekCommand:
@@ -145,14 +177,41 @@ class _SeekResult:
 class SeekEngine:
     """Пул воркеров для асинхронного seek."""
 
-    def __init__(self, lazy_index: LazyIndex, decoder: Decoder,
+    def __init__(self, lazy_index: LazyIndex, decoder: Decoder = None,
                  reader: Optional[WinSequentialReader] = None,
-                 num_workers: int = DEFAULT_WORKERS):
+                 num_workers: int = DEFAULT_WORKERS,
+                 decoder_factory=None):
+        """
+        decoder_factory — функция без аргументов, создающая НОВЫЙ Decoder.
+        Каждый воркер получает собственный экземпляр: PyAV CodecContext не
+        допускает параллельного использования из нескольких потоков, а
+        seek-воркеры работают одновременно друг с другом и с
+        VideoDecoderStage конвейера.
+
+        Аргумент decoder оставлен для обратной совместимости. Если фабрика
+        не передана, все воркеры разделят этот единственный декодер —
+        поведение как раньше, с соответствующим риском; в лог пишется
+        предупреждение, чтобы такая конфигурация не осталась незамеченной.
+        """
         self._lazy_index = lazy_index
         self._decoder = decoder
         self._base_reader = reader  # не используется, оставлен для совместимости
 
-        self.workers: List[SeekWorker] = [SeekWorker(i) for i in range(max(1, num_workers))]
+        if decoder_factory is None:
+            if decoder is None:
+                raise ValueError("Нужен decoder_factory либо decoder")
+            logger.warning(
+                "SeekEngine создан без decoder_factory: все воркеры будут "
+                "использовать ОДИН декодер совместно с конвейером. PyAV не "
+                "поддерживает параллельное декодирование на одном контексте — "
+                "возможно аварийное завершение процесса."
+            )
+            decoder_factory = lambda: decoder
+
+        self._decoder_factory = decoder_factory
+        self.workers: List[SeekWorker] = [
+            SeekWorker(i, decoder_factory) for i in range(max(1, num_workers))
+        ]
 
         self._command_queue: "queue.Queue[_SeekCommand]" = queue.Queue()
         self._result_queue: "queue.Queue[_SeekResult]" = queue.Queue()
@@ -230,6 +289,13 @@ class SeekEngine:
                 if worker.thread.is_alive():
                     logger.warning("SeekEngine.close(): SeekWorker %d не завершился", worker.id)
 
+        # Освобождаем нативные контексты декодеров. Не трогаем декодеры
+        # воркеров, чьи потоки ещё живы: закрытие контекста под работающим
+        # decode_sample() — та же проблема параллельного доступа.
+        for worker in self.workers:
+            if worker.thread is None or not worker.thread.is_alive():
+                worker.close_decoder()
+
     # ------------------------------------------------------------------
     # Координатор — единственный поток, управляющий состоянием пула
     # ------------------------------------------------------------------
@@ -255,26 +321,46 @@ class SeekEngine:
         self._drain_results()
         logger.info("SeekEngine: координатор остановлен")
 
+    @staticmethod
+    def _fail_request(request: SeekRequest, reason: str):
+        """
+        Единая точка отказа: помечает запрос завершённым И уведомляет
+        вызывающего через on_error.
+
+        Появилась после регрессии: в нескольких местах запрос завершался
+        молча (`_mark_done(...)` + `return` без вызова колбэка). Вызывающий
+        при этом не получал НИЧЕГО — ни успеха, ни ошибки — и ждал до
+        собственного watchdog-таймаута (в UI это выглядело как «плеер
+        оживает через 25 секунд после перемотки»). Любой путь, на котором
+        запрос не будет выполнен, обязан проходить через этот метод.
+        """
+        if request._done.is_set():
+            return
+        request._mark_done(False, reason)
+        if request.on_error:
+            try:
+                request.on_error(reason)
+            except Exception:
+                logger.exception("Ошибка в on_error seek-запроса")
+
     def _handle_command(self, cmd: _SeekCommand):
         request = cmd.request
         if request.is_cancelled:
-            if not request._done.is_set():
-                request._mark_done(False, "Seek отменён")
+            self._fail_request(request, "Seek отменён")
             return
 
         with self._lock:
             if request.generation != self._generation:
+                # Вытеснен более новым запросом. Уведомляем: вызывающий
+                # должен снять состояние «идёт перемотка», иначе UI
+                # останется заблокированным.
+                self._fail_request(request, "Seek вытеснен более новым запросом")
                 return
 
         worker = self._acquire_worker()
         if worker is None:
             logger.error("SeekEngine: нет доступных воркеров для seek(frame=%d)", cmd.frame_idx)
-            request._mark_done(False, "Нет доступных воркеров для seek")
-            if request.on_error:
-                try:
-                    request.on_error("Нет доступных воркеров для seek")
-                except Exception:
-                    logger.exception("Ошибка в on_error")
+            self._fail_request(request, "Нет доступных воркеров для seek")
             return
 
         worker.buffer.clear()
@@ -338,7 +424,7 @@ class SeekEngine:
         worker.state = 'stuck'
         idx = self.workers.index(worker)
         new_id = max(w.id for w in self.workers) + 1
-        replacement = SeekWorker(new_id)
+        replacement = SeekWorker(new_id, self._decoder_factory)
         self.workers[idx] = replacement
         logger.error(
             "SeekWorker %d окончательно выведен из пула (завис), добавлен SeekWorker %d",
@@ -360,10 +446,17 @@ class SeekEngine:
         if worker.thread is not None:
             worker.thread.join(timeout=2.0)
             if worker.thread.is_alive():
+                # Воркер прислал результат, но поток ОС ещё жив: в пул его
+                # не возвращаем (следующий _acquire_worker при
+                # необходимости пройдёт эскалацию отмены). Но запрос обязан
+                # получить ответ — иначе вызывающий зависнет до собственного
+                # таймаута. Раньше здесь был молчаливый return.
                 logger.warning(
                     "SeekWorker %d: результат получен, но поток ещё не завершился",
                     worker.id,
                 )
+                self._fail_request(result.request,
+                                   "поток seek-воркера не завершился вовремя")
                 return
             worker.thread = None
 
@@ -376,7 +469,12 @@ class SeekEngine:
                 is_current = (request.generation == self._generation)
 
             if result.cancelled or not is_current:
-                request._mark_done(False, "Seek отменён")
+                # Раньше здесь был _mark_done без вызова on_error, и
+                # вызывающий не узнавал об отмене вообще — это и приводило
+                # к «зависшей» перемотке в UI до watchdog-таймаута.
+                reason = ("Seek отменён" if result.cancelled
+                          else "Seek вытеснен более новым запросом")
+                self._fail_request(request, reason)
                 return
 
             if result.success:
@@ -384,8 +482,19 @@ class SeekEngine:
                 if request.on_complete:
                     try:
                         request.on_complete(worker.buffer)
-                    except Exception:
+                    except Exception as e:
+                        # Исключение ВНУТРИ колбэка (например, рассинхрон
+                        # сигнатур в цепочке применения результата) раньше
+                        # только логировалось: запрос считался успешным, но
+                        # вызывающий не получал ни успеха, ни ошибки и висел
+                        # до собственного watchdog-таймаута. Теперь сбой
+                        # колбэка доводится до вызывающего немедленно.
                         logger.exception("Ошибка в on_complete seek-запроса")
+                        if request.on_error:
+                            try:
+                                request.on_error(f"ошибка применения результата seek: {e}")
+                            except Exception:
+                                logger.exception("Ошибка в on_error seek-запроса")
             else:
                 request._mark_done(False, result.error_msg)
                 if request.on_error:
@@ -394,6 +503,22 @@ class SeekEngine:
                     except Exception:
                         logger.exception("Ошибка в on_error seek-запроса")
         finally:
+            # Порядок важен: сначала колбэк выше синхронно забрал кадры в
+            # буфер плеера (_on_seek_complete переносит их через
+            # peek_first/advance), и только теперь буфер воркера можно
+            # освободить. Раньше очистка была ТОЛЬКО в _handle_command перед
+            # следующей задачей — то есть декодированные кадры оставались в
+            # памяти воркера до его следующего использования. При трёх
+            # воркерах это до трёх удерживаемых наборов кадров одновременно,
+            # без всякой пользы: данные уже скопированы.
+            #
+            # Очищаем после того, как воркер отпущен потоком (thread is None
+            # проверено выше), поэтому конкурентной записи в буфер быть не
+            # может.
+            try:
+                worker.buffer.clear()
+            except Exception:
+                logger.exception("SeekWorker %d: ошибка очистки буфера", worker.id)
             worker.current_request = None
             worker.state = 'free'
 
@@ -427,6 +552,15 @@ class SeekEngine:
                         request.on_error("Таймаут seek-операции (watchdog)")
                     except Exception:
                         logger.exception("Ошибка в on_error после watchdog-таймаута")
+            # Буфер снятой по таймауту задачи тоже освобождаем — её кадры
+            # никому не будут отданы. Но только если поток воркера уже
+            # завершился: у зависшего (переведённого в 'stuck') воркера
+            # буфер трогать нельзя, там может продолжаться запись.
+            if worker.thread is None and worker.state != 'stuck':
+                try:
+                    worker.buffer.clear()
+                except Exception:
+                    logger.exception("SeekWorker %d: ошибка очистки буфера", worker.id)
             worker.current_request = None
 
     # ------------------------------------------------------------------
@@ -447,7 +581,14 @@ class SeekEngine:
             self._result_queue.put(_SeekResult(worker, request, success, cancelled, error_msg))
 
     def _do_seek(self, worker: SeekWorker, request: SeekRequest, frame_idx: int):
-        """Основная логика seek — пишет напрямую в worker.buffer."""
+        """
+        Основная логика seek — пишет напрямую в worker.buffer и декодирует
+        СВОИМ декодером воркера (см. докстринг SeekWorker): общий декодер
+        конвейера здесь использовать нельзя.
+        """
+        decoder = worker.get_decoder()
+        if decoder is None:
+            raise RuntimeError(f"SeekWorker {worker.id}: декодер недоступен")
         window = self._lazy_index.open_window(frame_idx)
         if window is None or len(window.video_records) == 0:
             raise RuntimeError("Не удалось открыть окно индекса")
@@ -531,10 +672,10 @@ class SeekEngine:
 
             sample = raw_data[rel_start:rel_start + size]
             try:
-                filtered = self._decoder.filter_avcc(sample)
+                filtered = decoder.filter_avcc(sample)
                 if not filtered:
                     continue
-                frames = self._decoder.decode_sample(filtered)
+                frames = decoder.decode_sample(filtered)
                 for frame in frames:
                     if request.is_cancelled:
                         return

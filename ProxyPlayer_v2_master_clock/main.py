@@ -17,6 +17,8 @@ import re
 import time
 import threading
 import logging
+import faulthandler
+import atexit
 from pathlib import Path
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -25,8 +27,89 @@ from config.logger import setup_logging
 from config.config import load_config
 from index.idx_cache import cleanup_cache
 
+
 # --- Мониторинг Seek ---
 from seek_monitor import install_seek_monitoring, attach_to_controller
+from player_telemetry import install_telemetry, attach_controller
+
+
+# Глобальная ссылка на файл аварийных дампов: faulthandler пишет в него на
+# уровне ОС в момент падения, поэтому файл обязан оставаться открытым весь
+# сеанс. Без этой ссылки объект собрал бы сборщик мусора, дескриптор
+# закрылся бы, и дамп ушёл бы в никуда — ровно та ситуация, ради которой
+# всё и делается.
+_crash_log_file = None
+
+
+def _resolve_log_dir(config: dict = None) -> Path:
+    """
+    Каталог для логов. Вынесено в функцию, чтобы одинаково работало и в
+    обычном режиме, и в ветке --index-service (там конфиг не загружается).
+    """
+    log_dir_str = (config or {}).get('log_directory', '')
+    if log_dir_str:
+        log_dir = Path(log_dir_str)
+    else:
+        log_dir = Path(QStandardPaths.writableLocation(
+            QStandardPaths.AppConfigLocation)) / "ProxyPlayer" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def enable_crash_handler(log_dir: Path, tag: str = "player") -> None:
+    """
+    Включает faulthandler — перехват НАТИВНЫХ падений (access violation и
+    подобных) в ctypes/WinAPI, PyAV, sounddevice, OpenGL.
+
+    Зачем отдельно от sys.excepthook/threading.excepthook: те ловят только
+    исключения уровня Python. Когда процесс умирает внутри C-кода, Python-хуки
+    не вызываются вообще — процесс просто исчезает, и в логах пусто (именно
+    этот симптом и наблюдался). faulthandler ставит обработчик сигналов на
+    уровне ОС и успевает сбросить C-стек и стеки ВСЕХ Python-потоков в файл
+    до смерти процесса.
+
+    Дамп пишется в отдельный файл crash_<tag>_<pid>.log — не в общий
+    player.log, чтобы аварийный вывод не смешивался с обычным (и потому что
+    faulthandler пишет напрямую в дескриптор, минуя logging).
+    """
+    global _crash_log_file
+    try:
+        crash_path = log_dir / f"crash_{tag}_{os.getpid()}.log"
+        _crash_log_file = open(crash_path, "a", encoding="utf-8", buffering=1)
+        _crash_log_file.write(
+            f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} | старт {tag} "
+            f"(pid={os.getpid()}) =====\n"
+        )
+        _crash_log_file.flush()
+        faulthandler.enable(file=_crash_log_file, all_threads=True)
+        logging.getLogger("ProxyPlayer").info("faulthandler включён: %s", crash_path)
+
+        # Пустой файл при штатном завершении смысла не имеет — прибираем,
+        # чтобы каталог логов не зарастал следами нормальных запусков.
+        atexit.register(_cleanup_crash_log, crash_path)
+    except Exception as e:
+        # Отсутствие аварийного лога не повод не запускать плеер.
+        logging.getLogger("ProxyPlayer").warning(
+            "Не удалось включить faulthandler: %s", e)
+
+
+def _cleanup_crash_log(crash_path: Path) -> None:
+    """Удаляет файл дампа, если в нём остался только заголовок (падений не было)."""
+    global _crash_log_file
+    try:
+        faulthandler.disable()
+        if _crash_log_file:
+            _crash_log_file.close()
+            _crash_log_file = None
+        if crash_path.exists():
+            text = crash_path.read_text(encoding="utf-8", errors="ignore")
+            # Только строки-заголовки "===== ... =====" — значит, дампов нет.
+            meaningful = [ln for ln in text.splitlines()
+                          if ln.strip() and not ln.startswith("=====")]
+            if not meaningful:
+                crash_path.unlink()
+    except Exception:
+        pass
 
 
 def global_exception_hook(exc_type, exc_value, exc_traceback):
@@ -162,11 +245,32 @@ def main():
             if not getattr(sys, 'frozen', False):
                 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+            # Логирование для сервиса индекса.
+            # Раньше эта ветка была полностью немой: ни setup_logging(), ни
+            # sys.excepthook — только print() в stderr, который в GUI-режиме
+            # уходит в никуда. Если сервис падал, обновление индекса тихо
+            # прекращалось, и в логах не оставалось никаких следов.
+            # Имя файла привязано к имени .idx и pid, чтобы сервисы разных
+            # файлов не писали в один лог.
+            svc_log_dir = _resolve_log_dir()
+            safe_idx = "".join(c if c.isalnum() or c in "._- " else "_"
+                               for c in idx_path.stem) or "idx"
+            setup_logging(
+                level=logging.INFO,
+                log_file=str(svc_log_dir / f"indexservice_{safe_idx}_{os.getpid()}.log"),
+                mode='w',
+            )
+            sys.excepthook = global_exception_hook
+            enable_crash_handler(svc_log_dir, tag="indexservice")
+            logging.getLogger("ProxyPlayer").info(
+                "IndexService: старт для %s (poll_interval=%.1f)", idx_path, poll_interval)
+
             # QApplication уже импортирован глобально, используем его
             app = QApplication(sys.argv)
             app.setApplicationName("ProxyPlayerIndexService")
 
             from index.index_service import IndexService
+            install_telemetry(svc_log_dir, tag="indexservice")
             service = IndexService(str(idx_path), poll_interval)
 
             import signal
@@ -175,7 +279,13 @@ def main():
 
             sys.exit(app.exec_())
         except Exception as e:
+            # logging может быть ещё не настроен (падение до setup_logging) —
+            # поэтому и print в stderr, и попытка записи в лог.
             print(f"Index service failed: {e}", file=sys.stderr)
+            try:
+                logging.getLogger("ProxyPlayer").exception("IndexService: аварийное завершение")
+            except Exception:
+                pass
             sys.exit(1)
 
     # Обычный запуск
@@ -202,14 +312,10 @@ def main():
     config_path = Path(QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)) / "player_config.json"
     config = load_config(config_path)
 
-    log_dir_str = config.get('log_directory', '')
-    if log_dir_str:
-        log_dir = Path(log_dir_str)
-    else:
-        log_dir = Path(QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)) / "ProxyPlayer" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = _resolve_log_dir(config)
 
     now = time.time()
+    # Под маску *.log попадают и crash_*.log — старые дампы тоже подчищаются.
     for f in log_dir.glob("*.log"):
         if f.is_file() and (now - f.stat().st_mtime) > 86400:
             try:
@@ -227,6 +333,11 @@ def main():
 
     setup_logging(level=logging.INFO, log_file=str(log_name), mode='w')
     sys.excepthook = global_exception_hook
+    # Нативные падения (ctypes/WinAPI, PyAV, sounddevice, OpenGL) не проходят
+    # через sys.excepthook — их ловит только faulthandler. Включаем сразу
+    # после настройки логирования, до создания любых компонентов плеера.
+    enable_crash_handler(log_dir, tag="managed" if managed else "player")
+    install_telemetry(log_dir, tag="manged" if managed else "player")
 
     # ──────────────────────────────────────────────
     # Включаем отладку для аудио‑компонентов (v2: MasterClock и pipeline)
@@ -248,6 +359,27 @@ def main():
 
     logger = logging.getLogger(__name__)
     logger.info("Запуск ProxyPlayer v2")
+
+    # ──────────────────────────────────────────────
+    # Включаем debug-запись SyncManager в файл sync_debug.log,
+    # если запущены через main_debug_sync.py
+    # ──────────────────────────────────────────────
+    if os.environ.get("PYPLAYER_DEBUG_SYNC") == "1":
+        sync_logger = logging.getLogger("SyncMonitor")
+        sync_logger.setLevel(logging.DEBUG)
+        # Убираем старые обработчики, чтобы не дублировать
+        for handler in sync_logger.handlers[:]:
+            sync_logger.removeHandler(handler)
+
+        # Файл sync_debug.log в папке рядом с main.py
+        debug_log_path = Path(__file__).resolve().parent / "sync_debug.log"
+        file_handler = logging.FileHandler(debug_log_path, encoding="utf-8", mode="w")
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        sync_logger.addHandler(file_handler)
+        sync_logger.propagate = False
 
     # --- Включаем мониторинг Seek ---
     install_seek_monitoring()
@@ -303,6 +435,7 @@ def main():
                 # --- Прикрепляем мониторинг к созданному контроллеру ---
                 if hasattr(widget, 'player'):
                     attach_to_controller(widget.player)
+                    attach_controller(widget.player)
                 widget.setWindowTitle(f"Player - {mp4_path.name}")
                 widget.show()
                 widget.send_hwnd_to_manager()

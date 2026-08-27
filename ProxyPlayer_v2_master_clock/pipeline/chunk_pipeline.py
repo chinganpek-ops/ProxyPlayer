@@ -111,7 +111,7 @@ class ReaderStage(Stage):
                  scheduler: StreamScheduler, output_queue: queue.Queue,
                  adaptive: AdaptiveChunkStrategy):
         super().__init__("ReaderStage")
-        self._reader = WinSequentialReader(mp4_path, rate_limit=0, overlapped=False)
+        self._reader = WinSequentialReader(mp4_path)
         self._pipeline = pipeline
         self._scheduler = scheduler
         self._output_queue = output_queue
@@ -152,7 +152,8 @@ class ReaderStage(Stage):
 
             logger.debug(f"Чтение чанка {local_chunk}, смещение={chunk_start_offset}, размер={size}")
             try:
-                data = self._reader.read_sequential(chunk_start_offset, size)
+                self._reader.seek(chunk_start_offset)
+                data = self._reader.read(size)
             except Exception as e:
                 logger.error(f"Ошибка чтения чанка {local_chunk}: {e}", exc_info=True)
                 self._scheduler.mark_chunk_failed(local_chunk)
@@ -184,6 +185,21 @@ class ReaderStage(Stage):
                 logger.error("Не удалось поместить чанк %d в очередь после повторных "
                              "попыток, помечаю как неудачный", local_chunk)
                 self._scheduler.mark_chunk_failed(local_chunk)
+
+    def refresh_file_size(self):
+        """
+        Просит ридер переспросить у ОС актуальный размер файла.
+
+        Нужно для растущего MP4: ридер создаётся один раз на весь сеанс, а
+        WinSequentialReader клампит чтение по размеру файла, определённому в
+        момент открытия. Без этого обновления чтение у live-края упирается в
+        устаревшую границу и молча возвращает пустые данные. Вызывается по
+        событию роста индекса — см. ChunkPipeline.notify_file_grew().
+        """
+        try:
+            self._reader.refresh_file_size()
+        except Exception:
+            logger.exception("ReaderStage: не удалось обновить размер файла")
 
     def stop(self):
         super().stop()
@@ -545,20 +561,44 @@ class ChunkPipeline:
         with self._window_lock:
             return self._window
 
-    def update_window(self, new_window: IndexWindow):
+    def update_window(self, new_window: IndexWindow, start_local_chunk: int = 0):
         """
         Полная смена активного окна (например, после seek в другую часть
-        файла): планировщик перезапускается с начала нового окна.
+        файла): планировщик перезапускается с указанного чанка нового окна.
+
+        start_local_chunk обязателен для seek: раньше метод всегда ставил
+        set_normal_mode(0, ...), а вызывающий отдельным вызовом чуть позже
+        выставлял правильный чанк. В промежутке между этими двумя вызовами
+        ReaderStage (работает непрерывно, независимо от seek) успевал
+        прочитать чанк 0 нового окна — то есть заведомо не то место, куда
+        метил seek. Теперь позиция передаётся сразу, и set_normal_mode
+        вызывается ровно один раз.
+
         Для роста live-файла внутри уже открытого окна используйте
         extend_window() — он не сбрасывает текущую позицию.
         """
         with self._window_lock:
             self._window = new_window
-            self._scheduler.set_normal_mode(0, new_window.total_chunks)
+            self._scheduler.set_normal_mode(start_local_chunk, new_window.total_chunks)
         # Обновляем диапазоны PTS для видео- и аудиостадий
         for stage in self._stages:
             if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
                 stage.set_active_window(new_window)
+
+    def notify_file_grew(self):
+        """
+        Сигнал "исходный файл вырос" — прокидывается в ReaderStage, чтобы тот
+        обновил размер файла у своего ридера.
+
+        Вызывается из PlaybackEngine после того, как LazyIndex подтвердил
+        появление новых записей в индексе (см. _refresh_growth_async). Сам
+        LazyIndex этот метод не дёргает: он ничего не знает о конвейере и не
+        должен — обновление собственных границ (mdat_end) он делает у себя, а
+        доставку сигнала в конвейер обеспечивает владелец обоих компонентов.
+        """
+        for stage in self._stages:
+            if isinstance(stage, ReaderStage):
+                stage.refresh_file_size()
 
     def extend_window(self, new_window: IndexWindow):
         """

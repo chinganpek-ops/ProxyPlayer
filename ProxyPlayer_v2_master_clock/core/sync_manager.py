@@ -4,6 +4,7 @@ sync_manager.py – менеджер синхронизации аудио/ви�
 Дрейф-коррекция удалена.
 
 Добавлено логирование синхронизации в sync_monitor.log через SyncMonitor.
+Исправлено: добавлена проверка FUTURE_HORIZON для предотвращения забегания кадров вперёд.
 """
 
 import logging
@@ -28,7 +29,6 @@ class SyncManager:
     """
 
     def __init__(self):
-        # Эталонный PTS после seek: кадры с меньшим PTS отбрасываются
         self._seek_pts_reference = 0
 
     def set_seek_reference(self, pts: int):
@@ -36,9 +36,6 @@ class SyncManager:
         self._seek_pts_reference = pts
         sync_monitor_logger.debug(f"SYNC_SEEK_REF pts={pts}")
 
-    # ------------------------------------------------------------------
-    # Основной метод выбора кадра
-    # ------------------------------------------------------------------
     def get_display_frame(
         self,
         video_buffer: FrameRingBuffer,
@@ -74,24 +71,31 @@ class SyncManager:
             if delta < -MAX_VIDEO_LAG:
                 # Безнадёжно устарел – пропускаем
                 video_buffer.advance()
-                sync_monitor_logger.debug(f"SYNC_VIDEO_DROP pts={pts} audio_clock={audio_clock} delta={delta}")
+                sync_monitor_logger.debug(
+                    f"SYNC_VIDEO_DROP pts={pts} audio_clock={audio_clock} delta={delta}"
+                )
                 return self.get_display_frame(
                     video_buffer, audio_clock, playing
                 )
+            elif delta > FUTURE_HORIZON:
+                # Кадр ещё слишком рано показывать – ждём, пока audio_clock догонит
+                sync_monitor_logger.debug(
+                    f"SYNC_VIDEO_FUTURE pts={pts} audio_clock={audio_clock} delta={delta}"
+                )
+                return video_buffer.get_keep_last()
             else:
                 # Показываем кадр
                 video_buffer.update_keep_last(frame, pts)
                 video_buffer.advance()
-                sync_monitor_logger.debug(f"SYNC_VIDEO pts={pts} audio_clock={audio_clock} delta={delta} buffer_count={video_buffer.count}")
+                sync_monitor_logger.debug(
+                    f"SYNC_VIDEO pts={pts} audio_clock={audio_clock} delta={delta} buffer_count={video_buffer.count}"
+                )
                 return frame
         else:
             # Буфер пуст – показываем последний сохранённый кадр
             sync_monitor_logger.debug(f"SYNC_VIDEO_EMPTY audio_clock={audio_clock}")
             return video_buffer.get_keep_last()
 
-    # ------------------------------------------------------------------
-    # Заглушка для совместимости со старым кодом
-    # ------------------------------------------------------------------
     def reset_drift(self):
         """Больше не используется, оставлен для совместимости."""
         pass

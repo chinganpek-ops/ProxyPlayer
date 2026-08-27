@@ -70,6 +70,23 @@ lazy_index.py – оконный доступ к индексу для ProxyPlay
   просканировано (признак пересоздания/усечения файла, а не чистого
   роста) — на такой случай инкрементальное состояние считается
   недостоверным и пересобирается заново.
+
+ИЗМЕНЕНИЯ (правки продакшен-ревью, итерация 4 — растущий mdat):
+- mdat_end больше не «замерзает» на значении, полученном при создании
+  LazyIndex. Раньше он задавался один раз (get_real_size в
+  StreamController._background_init) и никогда не обновлялся, хотя
+  используется как правая граница при расчёте размера ПОСЛЕДНЕГО чанка
+  каждого строящегося окна (_build_window) и как end_offset в SeekEngine.
+  На файле, растущем 8+ часов, последний чанк любого нового окна считался
+  от устаревшей границы — недочитанные чанки у live-края.
+  Теперь mdat_end обновляется в _refresh_mdat_end(), вызываемом из
+  refresh_from_disk()/_full_rescan() ТОЛЬКО когда в индексе реально
+  появились новые записи. Привязка к событию роста индекса, а не к
+  таймеру, корректна по порядку записи: данные попадают в mdat ДО того,
+  как появятся ссылающиеся на них записи индекса, поэтому увиденные новые
+  записи гарантируют, что соответствующие байты MP4 уже на диске.
+  Обновление границ файла — задача LazyIndex как владельца индекса;
+  PlaybackEngine остаётся чистым потребителем.
 """
 
 import threading
@@ -91,6 +108,7 @@ from index.moov_builder import (
     DEFAULT_TRACK_FILTER,
 )
 from index.idx_cache import remap_idx_incremental
+from utils.utils import get_real_size
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +441,24 @@ class LazyIndex:
                 # заметно меньшего, чем полный файл) self._all_c9.
                 self._audio_tracks_full = None
 
+            # ПРАВКА (продакшен-ревью, растущий mdat): mdat_end задавался
+            # ОДИН раз при создании LazyIndex (get_real_size в
+            # StreamController._background_init) и больше никогда не
+            # обновлялся. Он используется как правая граница при расчёте
+            # размера ПОСЛЕДНЕГО чанка каждого строящегося окна
+            # (_build_window -> build_chunks_from_cached_offsets) и как
+            # end_offset в SeekEngine. На файле, растущем 8+ часов, это
+            # означало, что последний чанк любого нового окна считался от
+            # устаревшей границы — источник недочитанных чанков у live-края.
+            #
+            # Обновляем именно здесь, а не по таймеру: порядок записи
+            # гарантирует корректность — данные пишутся в mdat ДО того, как
+            # появятся ссылающиеся на них записи индекса. Раз мы только что
+            # увидели новые записи, соответствующие байты в MP4 уже на диске.
+            # Обновление границ файла — задача LazyIndex как владельца
+            # индекса; PlaybackEngine остаётся только потребителем.
+            self._refresh_mdat_end()
+
             return got_new_video or len(new_c9) > 0
 
     def _full_rescan(self) -> bool:
@@ -446,7 +482,46 @@ class LazyIndex:
         self._next_scan_element = next_scan_element
         self._video_records_full = _filter_normal_records(all_193)
         self._audio_tracks_full = None
+        self._refresh_mdat_end()
         return True
+
+    def _refresh_mdat_end(self):
+        """
+        Переспрашивает актуальный размер MP4 (mdat_end) у файловой системы.
+        Вызывается только когда в индексе реально появились новые записи —
+        см. комментарий в refresh_from_disk().
+
+        get_real_size() читает размер через GetFileSizeEx на свежем хэндле,
+        минуя кэш SMB, поэтому на растущем сетевом файле возвращает
+        актуальное значение, а не закэшированное клиентом.
+
+        Ошибку не пробрасываем: неудача (0) означает лишь, что размер сейчас
+        неизвестен — оставляем прежнее значение и попробуем на следующем
+        обновлении индекса. Ронять из-за этого обновление уже полученных
+        записей индекса не нужно.
+        """
+        try:
+            new_end = get_real_size(str(self.mp4_path))
+        except Exception as e:
+            logger.warning("Не удалось обновить mdat_end для %s: %s", self.mp4_path, e)
+            return
+
+        if new_end <= 0:
+            logger.warning("get_real_size вернул %s для %s — mdat_end оставлен прежним (%d)",
+                           new_end, self.mp4_path, self.mdat_end)
+            return
+
+        if new_end > self.mdat_end:
+            logger.debug("mdat_end обновлён: %d -> %d", self.mdat_end, new_end)
+            self.mdat_end = new_end
+        elif new_end < self.mdat_end:
+            # Файл усечён/пересоздан — тот же класс аномалии, что и
+            # укоротившееся зеркало в refresh_from_disk(). Принимаем новое
+            # значение (продолжать считать по старой, большей границе
+            # опаснее: чтение уйдёт за реальный конец файла).
+            logger.warning("MP4 стал короче: mdat_end %d -> %d (%s)",
+                           self.mdat_end, new_end, self.mp4_path)
+            self.mdat_end = new_end
 
     def close(self):
         """Освобождает ресурсы."""

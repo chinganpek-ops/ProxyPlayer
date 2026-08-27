@@ -8,6 +8,23 @@ win_sequential_reader.py – асинхронный ридер для PyAV че�
 - Добавлен метод clear_cache().
 - Расширены метрики производительности (cache_hit_rate, error_rate, timeout_rate, iops).
 - Эвристика для определения паттерна доступа при кэшировании.
+
+ПРАВКИ ПРОДАКШЕН-РЕВЬЮ (три исправления, подробности — в докстрингах методов):
+1. close() теперь взводит событие отмены ДО захвата self._lock. Раньше сигнал
+   подавался только внутри _close_resources(), уже под локом, который read()
+   удерживает всё время блокирующего сетевого чтения — из-за этого close() из
+   другого потока ждал ровно то, что должен был прервать, а готовый механизм
+   отмены в _read_at() оставался недостижимым. Это и есть причина, по которой
+   поток чтения не закрывался при закрытии окна плеера.
+2. INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value вместо -1. Со старым
+   значением проверка результата CreateFileW никогда не срабатывала, и
+   неудачное открытие файла проходило незамеченным.
+3. read() дочитывает частичные результаты в цикле. Один ReadFile по SMB штатно
+   возвращает меньше запрошенного; раньше короткий результат отдавался наверх
+   как есть, и вызывающий молча терял кадры.
+
+Кэширование, статистика, выравнивание для NO_BUFFERING и логика _read_at()
+не менялись.
 """
 
 import time
@@ -30,7 +47,13 @@ OPEN_EXISTING = 3
 FILE_FLAG_OVERLAPPED = 0x40000000
 FILE_FLAG_NO_BUFFERING = 0x20000000
 FILE_FLAG_RANDOM_ACCESS = 0x10000000
-INVALID_HANDLE_VALUE = -1
+# ФИКС: CreateFileW.restype = wintypes.HANDLE — беззнаковый указатель, и при
+# ошибке ctypes отдаёт 0xFFFFFFFFFFFFFFFF, а не -1. Со старым значением (-1)
+# сравнение `self._handle == INVALID_HANDLE_VALUE` в _open() было ВСЕГДА
+# ложным: неудачное открытие файла не детектировалось, исключение не
+# бросалось, и невалидный хэндл уходил дальше в ReadFile — ошибка всплывала
+# позже и не по адресу ("не читается файл" вместо "не удалось открыть").
+INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
 
 ERROR_IO_PENDING = 997
 ERROR_OPERATION_ABORTED = 995
@@ -216,6 +239,44 @@ class WinSequentialReader:
             self._close_resources()
             raise
 
+    def refresh_file_size(self) -> int:
+        """
+        Переспрашивает у ОС актуальный размер файла и обновляет self._file_size.
+
+        Нужно для растущих файлов: _file_size определяется один раз в _open(),
+        а ReaderStage держит один ридер на весь сеанс воспроизведения. На
+        файле, растущем 8+ часов, read() клампит запрошенный размер по
+        границе `self._file_size - self._position` — то есть по размеру на
+        момент открытия. Дойдя до этой границы, read() начинает молча
+        возвращать b'' (данные "закончились"), хотя физически файл давно
+        вырос: чтение упирается в стену, чанки помечаются неудачными,
+        воспроизведение встаёт.
+
+        Вызывается по событию роста индекса (см. ChunkPipeline.notify_file_grew),
+        а не по таймеру: порядок записи гарантирует, что к моменту появления
+        новых записей в .idx соответствующие байты уже в mdat.
+
+        Возвращает актуальный размер (или прежний, если запрос не удался —
+        ошибку наверх не пробрасываем, попробуем на следующем событии).
+        """
+        with self._lock:
+            if self._is_closed or not self._handle:
+                return self._file_size
+
+            size = ctypes.c_longlong(0)
+            if not GetFileSizeEx(self._handle, ctypes.byref(size)):
+                logger.warning(
+                    "refresh_file_size: GetFileSizeEx не удался (%s), "
+                    "оставлен прежний размер %d", GetLastError(), self._file_size,
+                )
+                return self._file_size
+
+            new_size = size.value
+            if new_size != self._file_size:
+                logger.debug("Размер файла обновлён: %d -> %d", self._file_size, new_size)
+                self._file_size = new_size
+            return self._file_size
+
     def seekable(self) -> bool:
         return True
 
@@ -236,7 +297,25 @@ class WinSequentialReader:
             return self._position
 
     def read(self, size: int = -1) -> bytes:
-        """Синхронное чтение (для PyAV)."""
+        """
+        Синхронное чтение (для PyAV).
+
+        ФИКС (молчаливая потеря данных при частичном чтении): раньше здесь был
+        ОДИН вызов _read_at(), то есть один ReadFile. По SMB на больших блоках
+        ядро штатно возвращает меньше запрошенного — read() отдавал короткий
+        буфер, а вызывающий (DemuxerStage) молча отбрасывал кадры, не попавшие
+        в отданные байты (проверка rel_start + size > len(raw_data)): ни ошибки,
+        ни записи в лог, просто пропавшие кадры и звук. В старом ридере от этого
+        защищал цикл в read_sequential() по 1 МБ, при переходе на новый API он
+        потерялся.
+
+        Теперь чтение идёт циклом до тех пор, пока не набран полный запрошенный
+        размер либо пока _read_at() не вернёт 0 байт. Ноль трактуется как конец
+        доступных данных (EOF/отмена/таймаут/ошибка — все они уже залогированы
+        внутри _read_at); если при этом набрано меньше запрошенного, пишем
+        предупреждение, чтобы недобор было видно в логах, а не только по
+        косвенным симптомам.
+        """
         with self._lock:
             if self._is_closed:
                 return b''
@@ -248,9 +327,25 @@ class WinSequentialReader:
             if size <= 0:
                 return b''
 
+            requested = size
             start_time = time.perf_counter()
-            result = self._read_at(self._position, size)
+
+            chunks = []
+            got = 0
+            while got < requested:
+                if self._is_closed:
+                    break
+                part = self._read_at(self._position + got, requested - got)
+                if not part:
+                    # 0 байт: EOF, отмена, таймаут или ошибка — причина уже
+                    # залогирована внутри _read_at(). Прекращаем дочитывание.
+                    break
+                chunks.append(part)
+                got += len(part)
+
             elapsed = time.perf_counter() - start_time
+
+            result = chunks[0] if len(chunks) == 1 else b''.join(chunks)
 
             self._stats['reads'] += 1
             self._stats['bytes_read'] += len(result)
@@ -258,6 +353,13 @@ class WinSequentialReader:
 
             if result:
                 self._position += len(result)
+
+            if len(result) < requested:
+                logger.warning(
+                    "Недочитано: запрошено %d байт с позиции %d, получено %d",
+                    requested, self._position - len(result), len(result),
+                )
+
             return result
 
     def readinto(self, buffer) -> int:
@@ -446,7 +548,30 @@ class WinSequentialReader:
         return stats
 
     def close(self):
-        """Безопасное закрытие с отменой всех операций."""
+        """
+        Безопасное закрытие с отменой всех операций.
+
+        ФИКС (корректное закрытие потоков чтения): раньше SetEvent(_cancel_event)
+        вызывался только внутри _close_resources(), то есть УЖЕ ПОСЛЕ захвата
+        self._lock. Но read() держит этот же RLock всё время блокирующего
+        сетевого чтения — значит close() из другого потока вставал в очередь за
+        локом и ждал ровно того, что должен был прервать. Механизм отмены в
+        _read_at() (WaitForMultipleObjects по [io_event, cancel_event] с
+        последующим CancelIoEx) существовал, но был недостижим: сигнал не мог
+        быть подан, пока чтение не отпустит лок само.
+
+        Теперь событие отмены взводится ПЕРВЫМ делом, без лока: висящий read()
+        немедленно просыпается на WaitForMultipleObjects, вызывает CancelIoEx,
+        возвращает b'' и отпускает лок — после чего close() спокойно доводит
+        уборку ресурсов под локом, как и раньше.
+        """
+        # Ранний сигнал отмены — до любых блокировок (см. докстринг).
+        # Локальная копия: _close_resources() в другом потоке может обнулить
+        # поле между проверкой и использованием.
+        cancel_event = self._cancel_event
+        if cancel_event:
+            SetEvent(cancel_event)
+
         with self._lock:
             if self._is_closed:
                 return
