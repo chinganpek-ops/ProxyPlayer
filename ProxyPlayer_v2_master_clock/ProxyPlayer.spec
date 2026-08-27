@@ -47,9 +47,35 @@ except NameError:
 # явного сбора в дистрибутив не попадают — декодирование упадёт на импорте.
 av_datas, av_binaries, av_hidden = collect_all("av")
 
-# sounddevice: тянет за собой PortAudio DLL из _sounddevice_data.
-# Без неё MasterClock не сможет открыть аудиопоток.
+# sounddevice: сам модуль PyInstaller находит (он на cffi), но нативная
+# библиотека PortAudio лежит НЕ внутри пакета sounddevice, а в отдельном
+# каталоге верхнего уровня _sounddevice_data\portaudio-binaries\.
+# collect_all("sounddevice") её не забирает — это другой пакет. Без DLL
+# импорт проходит, а MasterClock.start() падает с
+# "OSError: PortAudio library not found" уже в рантайме.
 sd_datas, sd_binaries, sd_hidden = collect_all("sounddevice")
+
+# Каталог с самой DLL. Собираем и как данные, и как бинарники: в разных
+# версиях wheel библиотека попадает то в одну категорию, то в другую.
+try:
+    pa_datas, pa_binaries, pa_hidden = collect_all("_sounddevice_data")
+    sd_datas += pa_datas
+    sd_binaries += pa_binaries
+    sd_hidden += pa_hidden
+except Exception:
+    # PortAudio может быть установлен в системе, а не в пакете —
+    # тогда каталога нет, и это не ошибка.
+    pass
+
+# Подстраховка: явный поиск DLL на случай, если collect_all её не увидит.
+try:
+    import _sounddevice_data
+    _pa_dir = Path(_sounddevice_data.__file__).parent / "portaudio-binaries"
+    if _pa_dir.is_dir():
+        for _dll in _pa_dir.glob("*.dll"):
+            sd_binaries.append((str(_dll), "_sounddevice_data/portaudio-binaries"))
+except Exception:
+    pass
 
 # numpy иногда недосчитывает подмодули при агрессивной оптимизации.
 numpy_hidden = collect_submodules("numpy")
@@ -83,6 +109,11 @@ hiddenimports = [
     "utils.utils",
     "utils",
     "ui.controls",
+
+    # --- cffi: механизм, через который sounddevice обращается к PortAudio.
+    # _cffi_backend — скомпилированное расширение, статически не видное.
+    "cffi",
+    "_cffi_backend",
 
     # --- Прочее
     "faulthandler",
