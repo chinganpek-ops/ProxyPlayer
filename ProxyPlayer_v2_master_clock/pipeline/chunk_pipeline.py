@@ -89,12 +89,16 @@ if not audio_monitor_logger.handlers:
     audio_monitor_logger.addHandler(_audio_mon_handler)
 audio_monitor_logger.propagate = False
 
-VideoPacket = Tuple[bytes, int]                       # (data, pts)
+VideoPacket = Tuple[bytes, int, bool]                 # (data, pts, is_idr)
 AudioPacket = Tuple[int, bytes, bytes, int, bool]     # (track, data1, data2, pts, need_fade)
 
 RAW_QUEUE_SIZE = 10
 VIDEO_QUEUE_SIZE = 10
 AUDIO_QUEUE_SIZE = 50
+
+# До этой скорости JKL декодирует чанк целиком (плавная картинка).
+# Выше — только опорный кадр каждого чанка.
+SCRUB_FULL_DECODE_SPEED = 2.0
 
 
 class Stage(threading.Thread):
@@ -302,7 +306,18 @@ class DemuxerStage(Stage):
 
             sample = raw_data[rel_start:rel_start + size]
             pts = abs_idx * SAMPLES_PER_VIDEO_FRAME
-            video_packets.append((sample, pts))
+            # Помечаем опорные кадры (та же проверка, что в
+            # moov_builder.get_idr_indices_from_mmap). Нужно для режима
+            # перемотки: там чанки читаются с пропуском, состояние декодера
+            # между ними не сохраняется, и начинать декодирование можно
+            # ТОЛЬКО с IDR. GOP (15 кадров) не кратен чанку (12), поэтому
+            # первый кадр чанка опорным обычно не является.
+            try:
+                f7 = int(window.video_records[local_frame]['f7'])
+                is_idr = 27 <= f7 <= 30
+            except Exception:
+                is_idr = False
+            video_packets.append((sample, pts, is_idr))
 
         # ---------- аудио ----------
         if local_chunk < len(window.audio_chunks):
@@ -343,7 +358,100 @@ class VideoDecoderStage(Stage):
         self._pts_max = 0
         self._seek_pts_reference = 0
 
+        # --- режим скраба (JKL) ---
+        # При ускоренной перемотке кадры НЕ идут в кольцевой буфер: он
+        # построен на возрастающем PTS, а при движении назад кадры приходят
+        # с убывающим — порядок и drop_until() ломаются. Вместо этого
+        # последний декодированный кадр кладётся в одну ячейку, откуда его
+        # забирает PlaybackEngine. Синхронизировать не с чем: звук при JKL
+        # приглушён.
+        self._scrub_mode = False
+        self._scrub_speed = 1.0
+        self._scrub_frame = None      # (pts, frame)
+        self._scrub_lock = threading.Lock()
+
         logger.info("VideoDecoderStage инициализирован")
+
+    def set_scrub_mode(self, enabled: bool, speed: float = 1.0):
+        """
+        Включает/выключает режим ускоренной перемотки.
+
+        speed определяет, декодировать ли чанк целиком или только опорный
+        кадр: на x2 нужна плавность (12 кадров чанка ≈ 25 изображений в
+        секунду), на x4/x8 достаточно одного опорного кадра на чанк —
+        частота смены и так получается 8-17 в секунду, а нагрузка на
+        декодер кратно ниже.
+        """
+        with self._scrub_lock:
+            self._scrub_mode = enabled
+            self._scrub_speed = speed
+            if not enabled:
+                self._scrub_frame = None
+        monitor_logger.info(f"SCRUB_MODE enabled={enabled} speed={speed}")
+
+    def take_scrub_frame(self):
+        """Возвращает последний кадр скраба (pts, frame) или None."""
+        with self._scrub_lock:
+            return self._scrub_frame
+
+    def _decode_scrub(self, packets):
+        """
+        Декодирует пакеты чанка в режиме перемотки.
+
+        Декодирование НАЧИНАЕТСЯ С ОПОРНОГО КАДРА. Это принципиально: в
+        режиме перемотки чанки читаются с пропуском (stride), состояние
+        декодера между ними не сохраняется, и кадр, зависящий от
+        предыдущих, декодировать нельзя — получится мусор или ничего.
+
+        Раньше здесь бралcя packets[:1] — просто ПЕРВЫЙ пакет чанка,
+        в предположении, что опорный кадр стоит в начале каждого чанка.
+        На реальном материале это неверно: GOP 15 кадров не кратен чанку
+        в 12 кадров, поэтому чанк начинается с IDR лишь каждый пятый раз.
+        В остальных случаях перемотка на скорости x4/x8 не показывала
+        ничего.
+
+        До SCRUB_FULL_DECODE_SPEED декодируем от IDR до конца чанка —
+        картинка плавная. Выше — только сам опорный кадр.
+
+        Если в чанке нет ни одного IDR (при GOP 15 и чанке 12 таких около
+        20%), чанк пропускается целиком: лучше задержать предыдущий кадр,
+        чем показать артефакты.
+        """
+        with self._scrub_lock:
+            full = self._scrub_speed <= SCRUB_FULL_DECODE_SPEED
+
+        idr_pos = None
+        for i, pkt in enumerate(packets):
+            if len(pkt) > 2 and pkt[2] and self._is_pts_valid(pkt[1]):
+                idr_pos = i
+                break
+
+        if idr_pos is None:
+            monitor_logger.debug("SCRUB_NO_IDR chunk пропущен")
+            return
+
+        selected = packets[idr_pos:] if full else packets[idr_pos:idr_pos + 1]
+
+        last = None
+        for pkt in selected:
+            data, pts = pkt[0], pkt[1]
+            if not self._is_pts_valid(pts):
+                continue
+            try:
+                filtered = self._decoder.filter_avcc(data)
+                if not filtered:
+                    continue
+                frames = self._decoder.decode_sample(filtered)
+                for frame in frames:
+                    last = (pts, frame)
+            except Exception as e:
+                logger.debug(f"Скраб: ошибка декодирования pts={pts}: {e}")
+
+        if last is not None:
+            with self._scrub_lock:
+                self._scrub_frame = last
+            monitor_logger.debug(
+                f"SCRUB_FRAME pts={last[0]} full={full} idr_pos={idr_pos}")
 
     def set_active_window(self, window: IndexWindow):
         start_pts = window.window_start_chunk * FRAMES_PER_CHUNK * SAMPLES_PER_VIDEO_FRAME
@@ -370,7 +478,14 @@ class VideoDecoderStage(Stage):
             except queue.Empty:
                 continue
 
-            for data, pts in packets:
+            # В режиме скраба идём другим путём: без кольцевого буфера.
+            with self._scrub_lock:
+                scrubbing = self._scrub_mode
+            if scrubbing:
+                self._decode_scrub(packets)
+                continue
+
+            for data, pts, _is_idr in packets:
                 if not self._is_pts_valid(pts):
                     monitor_logger.debug(f"PACKET_OUTSIDE_WINDOW pts={pts}")
                     continue
@@ -506,7 +621,11 @@ class AudioDecoderStage(Stage):
                     pcm_block[:self._fade_len] *= np.linspace(0, 1, self._fade_len)
 
                 if self._master_clock:
-                    self._master_clock.push_audio(track_id, pcm_block)
+                    # PTS обязателен: по нему MasterClock выравнивает
+                    # дорожки по времени. Без него блоки укладывались бы
+                    # подряд, и разрыв в одной дорожке сдвигал бы её
+                    # относительно другой безвозвратно.
+                    self._master_clock.push_audio(track_id, pcm_block, pts)
                     audio_monitor_logger.debug(f"AUDIO_PUSHED track={track_id} pts={pts} samples={len(pcm_block)}")
 
                     # Логирование синхронизации
@@ -557,6 +676,10 @@ class ChunkPipeline:
             if isinstance(stage, AudioDecoderStage):
                 stage._master_clock = master_clock
 
+    def set_normal_position(self, current_local_chunk: int, total_local_chunks: int):
+        """Возврат планировщика в обычный режим с указанной позиции."""
+        self._scheduler.set_normal_mode(current_local_chunk, total_local_chunks)
+
     def get_window_snapshot(self) -> IndexWindow:
         with self._window_lock:
             return self._window
@@ -584,6 +707,123 @@ class ChunkPipeline:
         for stage in self._stages:
             if isinstance(stage, (VideoDecoderStage, AudioDecoderStage)):
                 stage.set_active_window(new_window)
+
+    # ------------------------------------------------------------------
+    # Публичное состояние и управление планировщиком (этап 1.2)
+    #
+    # PlaybackEngine обращался к self._pipeline._scheduler напрямую —
+    # то есть знал о внутреннем устройстве конвейера. Методы ниже делают
+    # эту связь явной и проверяемой контрактным тестом.
+    # ------------------------------------------------------------------
+    def get_scheduler_state(self) -> dict:
+        """Состояние планировщика — делегирует ему же."""
+        return self._scheduler.get_state()
+
+    def get_queue_sizes(self) -> dict:
+        """Длины очередей между стадиями."""
+        return {
+            "raw": self._raw_queue.qsize(),
+            "video": self._video_queue.qsize(),
+            "audio": self._audio_queue.qsize(),
+        }
+
+    def get_stage_status(self) -> list:
+        """Список стадий с признаком активности."""
+        out = []
+        for stage in self._stages:
+            out.append({
+                "name": getattr(stage, "name", "?"),
+                "alive": bool(stage.is_alive()) if hasattr(stage, "is_alive") else None,
+            })
+        return out
+
+    def get_reader_state(self) -> dict:
+        """Состояние ридера ReaderStage: размер файла, позиция, статистика."""
+        for stage in self._stages:
+            reader = getattr(stage, "_reader", None)
+            if reader is None:
+                continue
+            if hasattr(reader, "get_state"):
+                return reader.get_state()
+            return {}
+        return {}
+
+    def set_playback_position(self, local_chunk: int, total_chunks: int = None):
+        """
+        Переводит планировщик в обычный режим с указанной позиции.
+
+        Заменяет обращение вида pipeline._scheduler.set_normal_mode(...)
+        из PlaybackEngine.
+        """
+        if total_chunks is None:
+            window = self.get_window_snapshot()
+            total_chunks = window.total_chunks if window else 0
+        self._scheduler.set_normal_mode(local_chunk, total_chunks)
+
+    def set_fast_forward(self, direction: int, speed: float,
+                         local_chunk: int, total_chunks: int = None):
+        """
+        Переводит планировщик в режим ускоренной перемотки.
+
+        Заменяет обращение вида
+        pipeline._scheduler.set_fast_forward_mode(...) из PlaybackEngine.
+        """
+        if total_chunks is None:
+            window = self.get_window_snapshot()
+            total_chunks = window.total_chunks if window else 0
+        # Через публичный метод планировщика, а не set_fast_forward_mode:
+        # цепочка делегирования должна быть публичной на всех звеньях,
+        # иначе вынос интерфейса наверх остаётся половинчатым.
+        self._scheduler.set_fast_forward(
+            direction=direction, speed=speed,
+            current_local_chunk=local_chunk, total_local_chunks=total_chunks,
+        )
+
+    def set_scrub_mode(self, enabled: bool, direction: int = 0, speed: float = 1.0,
+                       current_local_chunk: int = 0):
+        """
+        Переводит конвейер в режим ускоренной перемотки (JKL) и обратно.
+
+        Раньше JKL вообще не доходил до конвейера: PlaybackEngine.set_speed()
+        менял только свои поля, а планировщик оставался в NORMAL. Из-за
+        этого JKL просто вычерпывал уже накопленный видеобуфер (около 14 с),
+        после чего картинка замирала, а назад не двигалась вовсе — в буфере
+        лежат только кадры ВПЕРЁД от текущей позиции.
+
+        Теперь планировщик переводится в FAST_FORWARD и выдаёт чанки с
+        пропуском в нужную сторону (stride по скорости), а декодер
+        складывает кадры в отдельную ячейку скраба.
+        """
+        window = self.get_window_snapshot()
+        total = window.total_chunks if window else 0
+
+        for stage in self._stages:
+            if isinstance(stage, VideoDecoderStage):
+                stage.set_scrub_mode(enabled, speed)
+
+        if enabled:
+            self._scheduler.set_fast_forward_mode(
+                direction=direction, speed=speed,
+                current_local_chunk=current_local_chunk,
+                total_local_chunks=total,
+            )
+        else:
+            self._scheduler.set_normal_mode(current_local_chunk, total)
+
+        # Очереди содержат чанки, набранные для другого режима: при входе в
+        # скраб это данные обычного воспроизведения, при выходе — разрежённые
+        # чанки перемотки. И то и другое дальше только мешает.
+        self.flush()
+        logger.info("ChunkPipeline: скраб %s (direction=%d, speed=%.1f, chunk=%d)",
+                    "включён" if enabled else "выключен",
+                    direction, speed, current_local_chunk)
+
+    def get_scrub_frame(self):
+        """Последний кадр скраба (pts, frame) или None."""
+        for stage in self._stages:
+            if isinstance(stage, VideoDecoderStage):
+                return stage.take_scrub_frame()
+        return None
 
     def notify_file_grew(self):
         """

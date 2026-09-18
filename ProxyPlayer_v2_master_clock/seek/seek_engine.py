@@ -95,10 +95,24 @@ class SeekRequest:
     def cancel_event(self) -> threading.Event:
         return self._cancelled
 
-    def _mark_done(self, success: bool, error: str = None):
+    @property
+    def is_done(self) -> bool:
+        """Завершён ли запрос (успешно или с ошибкой)."""
+        return self._done.is_set()
+
+    def mark_done(self, success: bool, error: str = None):
+        """
+        Публичное завершение запроса. Раньше вызывалось как _mark_done() из
+        SeekEngine — то есть модуль обращался к приватному методу чужого
+        объекта. Метод остаётся под старым именем как псевдоним, чтобы
+        правка была совместимой.
+        """
         self._success = success
         self._error = error
         self._done.set()
+
+    # Псевдоним для совместимости с существующими вызовами.
+    _mark_done = mark_done
 
     def wait(self, timeout: float = None) -> bool:
         self._done.wait(timeout)
@@ -265,6 +279,37 @@ class SeekEngine:
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result.get('buffer', FrameRingBuffer(max_frames=2))
+
+    def get_workers_state(self) -> List[dict]:
+        """
+        Состояние пула воркеров для диагностики.
+
+        Заменяет чтение self.workers и приватных полей воркера напрямую:
+        телеметрия и тесты получают снимок, не завися от внутреннего
+        устройства SeekWorker.
+        """
+        out = []
+        for w in self.workers:
+            thread = w.thread
+            out.append({
+                "id": w.id,
+                "state": w.state,
+                "buffer_count": getattr(w.buffer, "count", None),
+                "alive": bool(thread.is_alive()) if thread is not None else False,
+                "frame_idx": w.current_frame_idx,
+                "has_decoder": w.decoder is not None,
+            })
+        return out
+
+    def get_state(self) -> dict:
+        """Общее состояние движка перемотки."""
+        return {
+            "generation": self._generation,
+            "workers": self.get_workers_state(),
+            "command_queue": self._command_queue.qsize(),
+            "result_queue": self._result_queue.qsize(),
+            "closing": self._closing.is_set(),
+        }
 
     def cancel_current(self):
         """Отменяет текущий выполняющийся/ожидающий запрос."""

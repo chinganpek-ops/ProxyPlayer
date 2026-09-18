@@ -371,7 +371,7 @@ class TestStreamScheduler(unittest.TestCase):
             if c is None:
                 break
             got.append(c)
-            s._last_chunk_ts = 0.0     # снимаем ограничение темпа для теста
+            s.reset_rate_limit()       # снимаем ограничение темпа для теста
         self.assertEqual(got, [0, 1, 2, 3, 4])
 
     def test_exhausted_returns_none(self):
@@ -379,7 +379,7 @@ class TestStreamScheduler(unittest.TestCase):
         s.set_normal_mode(0, 2)
         for _ in range(2):
             s.get_next_chunk()
-            s._last_chunk_ts = 0.0
+            s.reset_rate_limit()
         self.assertIsNone(s.get_next_chunk())
 
     def test_start_offset_respected(self):
@@ -410,17 +410,37 @@ class TestStreamScheduler(unittest.TestCase):
                           "в зоне гистерезиса загрузка ещё не должна возобновляться")
 
         buf.count = 55                              # ниже 60%
-        s._last_chunk_ts = 0.0
+        s.reset_rate_limit()
         self.assertIsNotNone(s.get_next_chunk(), "ниже нижнего порога загрузка идёт")
 
-    def test_mark_chunk_failed_allows_retry(self):
-        """Неудачный чанк обязан выдаваться повторно, иначе в видео дыра."""
+    def test_mark_chunk_failed_removes_from_loaded(self):
+        """
+        Неудачный чанк должен покинуть множество загруженных — иначе
+        планировщик считал бы его прочитанным, и в видео осталась бы дыра.
+
+        Проверяется именно это, а не «чанк выдан повторно немедленно»:
+        в обычном режиме позиция уже ушла вперёд, и тот же чанк будет
+        выдан, когда чтение к нему вернётся (после смены окна или seek).
+        Прежняя версия теста имитировала возврат записью в
+        s._current_chunk — то есть проверяла поведение, которого в
+        production-коде нет.
+        """
         s = self._sched()
         s.set_normal_mode(0, 3)
         first = s.get_next_chunk()
-        s._last_chunk_ts = 0.0
+        self.assertIn(first, s.get_loaded_chunks())
+
         s.mark_chunk_failed(first)
-        s._current_chunk = first                   # планировщик вернулся к нему
+        self.assertNotIn(first, s.get_loaded_chunks(),
+                         "неудачный чанк обязан выбыть из загруженных")
+
+    def test_failed_chunk_reissued_after_window_reset(self):
+        """После возврата планировщика на ту же позицию чанк выдаётся снова."""
+        s = self._sched()
+        s.set_normal_mode(0, 3)
+        first = s.get_next_chunk()
+        s.mark_chunk_failed(first)
+        s.set_normal_mode(first, 3)          # окно переоткрыто с той же точки
         self.assertEqual(s.get_next_chunk(), first)
 
     def test_seek_mode_prioritises_target(self):
@@ -434,7 +454,7 @@ class TestStreamScheduler(unittest.TestCase):
         got = []
         for _ in range(4):
             c = s.get_next_chunk()
-            s._last_chunk_ts = 0.0
+            s.reset_rate_limit()
             if c is None:
                 break
             got.append(c)
@@ -453,7 +473,7 @@ class TestStreamScheduler(unittest.TestCase):
         s.set_fast_forward_mode(direction=1, speed=4.0,
                                 current_local_chunk=0, total_local_chunks=50)
         first = s.get_next_chunk()
-        s._last_chunk_ts = 0.0
+        s.reset_rate_limit()
         second = s.get_next_chunk()
         self.assertIsNotNone(second)
         self.assertGreater(second - first, 1,
@@ -468,20 +488,24 @@ class TestStreamScheduler(unittest.TestCase):
         s = self._sched()
         s.set_normal_mode(0, 5)
         s.get_next_chunk()
-        s._last_chunk_ts = 0.0
-        pos_before = s._current_chunk
-        loaded_before = s.loaded_count
+        s.reset_rate_limit()
+        before = s.get_state()
+        pos_before = before["current_chunk"]
+        loaded_before = before["loaded_count"]
 
         s.extend_total_chunks(50)
-        self.assertEqual(s._current_chunk, pos_before, "позиция не должна сбрасываться")
-        self.assertEqual(s.loaded_count, loaded_before, "загруженные чанки сохраняются")
-        self.assertEqual(s._total_chunks, 50)
+        self.assertEqual(s.get_state()["current_chunk"], pos_before,
+                         "позиция не должна сбрасываться")
+        self.assertEqual(s.get_state()["loaded_count"], loaded_before,
+                         "загруженные чанки сохраняются")
+        self.assertEqual(s.get_state()["total_chunks"], 50)
 
     def test_extend_never_shrinks(self):
         s = self._sched()
         s.set_normal_mode(0, 40)
         s.extend_total_chunks(10)
-        self.assertEqual(s._total_chunks, 40, "граница не должна уменьшаться")
+        self.assertEqual(s.get_state()["total_chunks"], 40,
+                         "граница не должна уменьшаться")
 
     def test_shift_loaded_remaps_indices(self):
         """
@@ -493,23 +517,26 @@ class TestStreamScheduler(unittest.TestCase):
         s.set_normal_mode(0, 100)
         for _ in range(5):
             s.get_next_chunk()
-            s._last_chunk_ts = 0.0
-        self.assertEqual(sorted(s._loaded_chunks), [0, 1, 2, 3, 4])
-        mode_before = s._mode
+            s.reset_rate_limit()
+        self.assertEqual(s.get_loaded_chunks(), [0, 1, 2, 3, 4])
+        mode_before = s.get_state()["mode"]
 
         s.shift_loaded(chunk_shift=2, new_total_local_chunks=100)
 
-        self.assertEqual(sorted(s._loaded_chunks), [0, 1, 2],
+        self.assertEqual(s.get_loaded_chunks(), [0, 1, 2],
                          "чанки 0 и 1 ушли за границу окна и должны выпасть")
-        self.assertEqual(s._current_chunk, 3, "позиция сдвинута на chunk_shift")
-        self.assertEqual(s._mode, mode_before, "режим не меняется при сдвиге окна")
+        self.assertEqual(s.get_state()["current_chunk"], 3,
+                         "позиция сдвинута на chunk_shift")
+        self.assertEqual(s.get_state()["mode"], mode_before,
+                         "режим не меняется при сдвиге окна")
 
     def test_shift_loaded_zero_is_noop_for_position(self):
         s = self._sched()
         s.set_normal_mode(4, 20)
         s.shift_loaded(chunk_shift=0, new_total_local_chunks=30)
-        self.assertEqual(s._current_chunk, 4)
-        self.assertEqual(s._total_chunks, 30)
+        st = s.get_state()
+        self.assertEqual(st["current_chunk"], 4)
+        self.assertEqual(st["total_chunks"], 30)
 
     def test_reset_clears_everything(self):
         s = self._sched()
@@ -517,8 +544,9 @@ class TestStreamScheduler(unittest.TestCase):
         s.get_next_chunk()
         s.reset()
         self.assertEqual(s.loaded_count, 0)
-        self.assertEqual(s._total_chunks, 0)
-        self.assertEqual(s._mode, PlaybackMode.NORMAL)
+        st = s.get_state()
+        self.assertEqual(st["total_chunks"], 0)
+        self.assertEqual(st["mode"], "NORMAL")
 
 
 if __name__ == "__main__":

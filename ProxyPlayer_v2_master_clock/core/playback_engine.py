@@ -246,6 +246,52 @@ class PlaybackEngine:
 
     # ------------------------------------------------------------------
 
+    def get_buffer_state(self) -> dict:
+        """
+        Заполненность буферов кадров и фактический размер кадра.
+
+        display и fill в обычном режиме указывают на ОДИН объект (см.
+        start_playback) — признак shared отмечен явно, иначе при чтении
+        отчёта их память легко посчитать дважды.
+        """
+        def describe(buf):
+            if buf is None:
+                return None
+            info = {
+                "count": getattr(buf, "count", None),
+                "max_frames": getattr(buf, "max_frames", None),
+            }
+            if info["max_frames"]:
+                info["fill_pct"] = round(100.0 * info["count"] / info["max_frames"], 1)
+            try:
+                entry = buf.peek_first()
+                if entry is not None:
+                    frame = entry[1]
+                    info["frame_shape"] = list(getattr(frame, "shape", []) or [])
+                    info["frame_bytes"] = int(getattr(frame, "nbytes", 0) or 0)
+            except Exception:
+                pass
+            return info
+
+        with self._buffer_lock:
+            display = self._display_buffer
+            fill = self._fill_buffer
+            free = self._free_buffer
+        return {
+            "display": describe(display),
+            "fill": describe(fill),
+            "free": describe(free),
+            "shared": display is fill,
+        }
+
+    def get_display_buffer(self):
+        """
+        Текущий буфер отображения — для инструментов замера, которым
+        нужен доступ к кадрам без вмешательства в воспроизведение.
+        """
+        with self._buffer_lock:
+            return self._display_buffer
+
     def set_master_clock(self, master_clock: MasterClock):
         self._master_clock = master_clock
 
@@ -539,6 +585,23 @@ class PlaybackEngine:
                 self._master_clock.set_muted(True)
         self._seek_accumulator = 0.0
         self._last_seek_time = time.monotonic()
+        # Сообщаем конвейеру: без этого JKL лишь вычерпывал уже набранный
+        # видеобуфер и замирал, а назад не двигался вовсе.
+        self._enter_scrub()
+
+    def _enter_scrub(self):
+        """Переводит конвейер в режим перемотки от ТЕКУЩЕЙ позиции."""
+        try:
+            window = self._pipeline.get_window_snapshot()
+            local_chunk = ((self._current_frame_idx - window.window_start_frame)
+                           // FRAMES_PER_CHUNK)
+            local_chunk = max(0, min(local_chunk, max(0, window.total_chunks - 1)))
+            self._pipeline.set_scrub_mode(
+                True, direction=self._seek_direction,
+                speed=self._seek_speed, current_local_chunk=local_chunk,
+            )
+        except Exception:
+            logger.exception("Не удалось включить режим перемотки")
 
     def reset_speed(self):
         if self._seek_speed == 1.0 and self._seek_direction == 0:
@@ -547,6 +610,24 @@ class PlaybackEngine:
         self._seek_speed_index = -1
         self._seek_direction = 0
         self._seek_accumulator = 0.0
+
+        # Возвращаем конвейер к обычному чтению с той позиции, где
+        # остановилась перемотка, и сбрасываем буферы: в них могли остаться
+        # разрежённые чанки режима скраба.
+        try:
+            window = self._pipeline.get_window_snapshot()
+            local_chunk = ((self._current_frame_idx - window.window_start_frame)
+                           // FRAMES_PER_CHUNK)
+            local_chunk = max(0, min(local_chunk, max(0, window.total_chunks - 1)))
+            self._display_buffer.clear()
+            self._fill_buffer.clear()
+            self._pipeline.set_scrub_mode(False, current_local_chunk=local_chunk)
+            if self._master_clock:
+                self._master_clock.set_clock(video_frame_to_pts(self._current_frame_idx))
+                self._master_clock.flush_audio()
+        except Exception:
+            logger.exception("Не удалось выйти из режима перемотки")
+
         if self._master_clock:
             self._master_clock.set_muted(False)
         if self._normal_playing_state and not self.playing:
@@ -599,17 +680,35 @@ class PlaybackEngine:
             display_buf = self._display_buffer
 
         if self._seek_direction != 0 and self._seek_speed > 1.0:
+            # Позицию ведём по времени: сколько кадров должно быть пройдено
+            # с прошлого тика при текущей скорости и направлении.
             now = time.monotonic()
             dt = now - self._last_seek_time
             self._last_seek_time = now
-            frames_to_skip = self._seek_speed * self.fps * dt
-            self._seek_accumulator += frames_to_skip
+            self._seek_accumulator += self._seek_speed * self.fps * dt
             if self._seek_accumulator >= 1.0:
                 skip = int(self._seek_accumulator)
                 self._seek_accumulator -= skip
                 target = self._current_frame_idx + skip * self._seek_direction
-                target = max(0, min(target, self.total_frames - 1))
-                self._fast_seek(target)
+                target = max(0, min(target, max(0, self.total_frames - 1)))
+                self._advance_scrub(target)
+
+            # Кадр берём из ячейки скраба, которую наполняет
+            # VideoDecoderStage. Раньше здесь возвращался get_keep_last() —
+            # то есть последний кадр из кольцевого буфера, который при
+            # перемотке никем не обновлялся: картинка замирала, как только
+            # буфер вычерпывался, а назад не двигалась вообще.
+            entry = None
+            try:
+                entry = self._pipeline.get_scrub_frame()
+            except Exception:
+                logger.debug("Не удалось получить кадр перемотки", exc_info=True)
+            if entry is not None:
+                pts, frame = entry
+                with self._clock_lock:
+                    self._audio_clock = pts
+                display_buf.update_keep_last(frame, pts)
+                return frame
             return display_buf.get_keep_last()
 
         return self._sync.get_display_frame(
@@ -618,16 +717,79 @@ class PlaybackEngine:
             playing=self.playing,
         )
 
-    def _fast_seek(self, frame_idx: int):
+    def _advance_scrub(self, frame_idx: int):
+        """
+        Двигает позицию перемотки и сообщает планировщику, откуда читать.
+
+        Заменил прежний _fast_seek(), который вызывал
+        display_buffer.drop_until(pts). Тот подход работал только вперёд и
+        только пока в буфере оставались кадры: назад drop_until() ничего не
+        делает (в буфере лежат кадры БУДУЩЕГО, а порог уменьшается), а
+        вперёд буфер заканчивался за несколько секунд, и картинка замирала.
+        Теперь позиция ведёт планировщик, который читает чанки с пропуском
+        в нужную сторону, — данные подтягиваются постоянно и симметрично в
+        обе стороны.
+        """
         with self._seek_lock:
             self._current_frame_idx = frame_idx
-            pts = video_frame_to_pts(frame_idx)
-            with self._clock_lock:
-                self._audio_clock = pts
-        self._display_buffer.drop_until(pts)
-        first = self._display_buffer.peek_first()
-        if first:
-            self._display_buffer.update_keep_last(first[1], first[0])
+
+        try:
+            window = self._pipeline.get_window_snapshot()
+            if window is None:
+                return
+            # Вышли за пределы окна — переоткрываем его вокруг новой позиции,
+            # иначе перемотка упрётся в границу (при x8 это секунды).
+            if not window.contains_frame(frame_idx) and self._lazy_index is not None:
+                window = self._lazy_index.open_window(frame_idx)
+                if window is None:
+                    return
+                self._pipeline.update_window(window)
+
+            local_chunk = ((frame_idx - window.window_start_frame) // FRAMES_PER_CHUNK)
+            local_chunk = max(0, min(local_chunk, max(0, window.total_chunks - 1)))
+            # Через публичный метод конвейера. Раньше здесь стоял вызов
+            # self._pipeline._scheduler.set_fast_forward_mode(...) — движок
+            # лез в приватное поле конвейера и знал о существовании
+            # планировщика. Теперь конвейер сам делегирует вызов своему
+            # планировщику, а движок о нём не осведомлён.
+            self._pipeline.set_fast_forward(
+                direction=self._seek_direction,
+                speed=self._seek_speed,
+                local_chunk=local_chunk,
+                total_chunks=window.total_chunks,
+            )
+        except Exception:
+            logger.debug("Ошибка продвижения перемотки", exc_info=True)
+
+    def get_playback_state(self) -> dict:
+        """
+        Состояние воспроизведения одним снимком.
+
+        Заменяет чтение _current_frame_idx, _transition_state,
+        _seek_generation, _seek_speed и флагов фоновых операций извне.
+        Раньше телеметрия и инструменты замера собирали это по полям, и
+        снимок мог оказаться внутренне несогласованным.
+        """
+        with self._clock_lock:
+            clock = self._audio_clock
+        return {
+            "playing": self.playing,
+            "paused": self._paused,
+            "current_frame": self._current_frame_idx,
+            "audio_clock": clock,
+            "total_frames": self.total_frames,
+            "start_frame_offset": self.start_frame_offset,
+            "fps": self.fps,
+            "seek_generation": self._seek_generation,
+            "transition": self._transition_state.name,
+            "transition_generation": self._transition_generation,
+            "seek_speed": self._seek_speed,
+            "seek_direction": self._seek_direction,
+            "sliding": self._sliding_in_progress.is_set(),
+            "growth_refreshing": self._growth_refresh_in_progress.is_set(),
+            "closed": self._closed.is_set(),
+            "playback_started": self._playback_started,
+        }
 
     @property
     def audio_clock(self) -> int:

@@ -165,6 +165,81 @@ class StreamScheduler:
                 self._total_chunks, old_loaded_count, len(self._loaded_chunks),
             )
 
+    # ------------------------------------------------------------------
+    # Публичное состояние (этап 1.2 рефакторинга)
+    #
+    # Раньше PlaybackEngine и телеметрия читали _mode, _current_chunk,
+    # _total_chunks, _loaded_chunks напрямую. Такие связи не проверяются
+    # контрактным тестом и ломаются молча при переименовании поля —
+    # именно этот класс ошибок оказался самым дорогим в отладке.
+    # ------------------------------------------------------------------
+    def get_state(self) -> dict:
+        """Снимок состояния планировщика. Только чтение, без побочных эффектов."""
+        with self._lock:
+            return {
+                "mode": self._mode.name,
+                "current_chunk": self._current_chunk,
+                "total_chunks": self._total_chunks,
+                "loaded_count": len(self._loaded_chunks),
+                "loading_allowed": self._loading_allowed,
+                "target_chunk": self._target_chunk,
+                "direction": self._direction,
+                "speed": self._speed,
+            }
+
+    @property
+    def mode_name(self) -> str:
+        """Имя текущего режима — для гейтов и логирования."""
+        return self._mode.name
+
+    @property
+    def total_chunks(self) -> int:
+        with self._lock:
+            return self._total_chunks
+
+    @property
+    def current_chunk(self) -> int:
+        with self._lock:
+            return self._current_chunk
+
+    def set_fast_forward(self, direction: int, speed: float,
+                         current_local_chunk: int, total_local_chunks: int):
+        """
+        Публичный псевдоним set_fast_forward_mode().
+
+        Существует, чтобы ChunkPipeline мог делегировать переключение
+        режима, а PlaybackEngine не обращался к планировщику через
+        pipeline._scheduler — то есть к приватному полю чужого объекта.
+        """
+        self.set_fast_forward_mode(direction, speed,
+                                   current_local_chunk, total_local_chunks)
+
+    def get_loaded_chunks(self) -> list:
+        """
+        Отсортированный список уже выданных чанков (копия).
+
+        Нужен там, где важен не счётчик, а сами индексы: проверка
+        пересчёта при сдвиге окна (shift_loaded) и диагностика того, какие
+        участки окна уже прочитаны. get_state() отдаёт только количество,
+        по которому перестановку индексов проверить нельзя.
+
+        Возвращается копия, а не внутреннее множество: иначе вызывающий
+        мог бы изменить состояние планировщика, ничего об этом не зная.
+        """
+        with self._lock:
+            return sorted(self._loaded_chunks)
+
+    def reset_rate_limit(self):
+        """
+        Снимает ограничение темпа выдачи чанков.
+
+        Нужен тестам, которые сейчас пишут в _last_chunk_ts напрямую:
+        запись в чужое поле обходит логику объекта и ломается при любом
+        изменении механизма ограничения.
+        """
+        with self._lock:
+            self._last_chunk_ts = 0.0
+
     def set_seek_mode(self, target_local_chunk: int, total_local_chunks: int):
         with self._lock:
             self._mode = PlaybackMode.SEEK
@@ -200,7 +275,10 @@ class StreamScheduler:
         """Возвращает локальный индекс следующего чанка с учётом гистерезиса и скорости."""
         with self._lock:
             # 1. Проверка заполненности буфера (общая для всех режимов)
-            if self._video_buffer is not None:
+            # В FAST_FORWARD заполненность видеобуфера не показатель: кадры
+            # скраба туда не попадают, буфер остаётся с прежним содержимым и
+            # намертво заблокировал бы выдачу чанков.
+            if self._video_buffer is not None and self._mode != PlaybackMode.FAST_FORWARD:
                 count = self._video_buffer.count
                 if count >= self._high_threshold:
                     self._loading_allowed = False
@@ -215,13 +293,23 @@ class StreamScheduler:
                 # Если буфер не установлен, продолжаем без ограничений
                 pass
 
-            # 2. Ограничение скорости только для NORMAL режима
-            if self._mode == PlaybackMode.NORMAL and self._last_chunk_ts > 0:
+            # 2. Ограничение темпа выдачи чанков.
+            if self._last_chunk_ts > 0:
                 elapsed = time.monotonic() - self._last_chunk_ts
-                min_interval = self._chunk_duration / self._speed_factor
-                if elapsed < min_interval:
-                    # Ещё рано выдавать следующий чанк
-                    return None
+                if self._mode == PlaybackMode.NORMAL:
+                    min_interval = self._chunk_duration / self._speed_factor
+                    if elapsed < min_interval:
+                        return None
+                elif self._mode == PlaybackMode.FAST_FORWARD:
+                    # В FAST_FORWARD видеобуфер не используется как
+                    # обратная связь (кадры идут в отдельную ячейку скраба),
+                    # поэтому без собственного ограничения чтение ушло бы на
+                    # максимальной скорости диска и забило бы сеть.
+                    # Темп задаём по скорости перемотки: chunk_duration/speed.
+                    speed = max(1.0, self._speed)
+                    min_interval = self._chunk_duration / speed
+                    if elapsed < min_interval:
+                        return None
 
             # 3. Выбор чанка (приоритет/обычный/перемотка)
             chunk = self._get_next_chunk_locked()

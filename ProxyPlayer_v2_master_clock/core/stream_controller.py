@@ -235,6 +235,53 @@ class StreamController:
             self._ready.set()
 
     # ------------------------------------------------------------------
+    # Публичное состояние (этап 1.2 рефакторинга)
+    #
+    # Интерфейс и инструменты читали _ready, _init_error, _playback,
+    # _finalized напрямую. Методы ниже делают эти связи явными: их
+    # проверяет контрактный тест, и переименование поля перестаёт быть
+    # молчаливой поломкой.
+    # ------------------------------------------------------------------
+    def is_ready(self, timeout: float = None) -> bool:
+        """
+        Готов ли контроллер к работе. С timeout — ждёт готовности,
+        без него отвечает немедленно.
+        """
+        if timeout is not None:
+            return self._ready.wait(timeout=timeout)
+        return self._ready.is_set()
+
+    def get_init_error(self):
+        """Текст ошибки инициализации или None."""
+        return self._init_error
+
+    @property
+    def is_finalized(self) -> bool:
+        """Завершена ли запись (файл больше не растёт)."""
+        return self._finalized
+
+    def get_state(self) -> dict:
+        """Общее состояние контроллера."""
+        return {
+            "playing": self.playing,
+            "paused": self._paused,
+            "ready": self._ready.is_set(),
+            "closed": self._closed,
+            "init_error": self._init_error,
+            "finalized": self._finalized,
+            "total_frames": self.total_frames,
+            "start_frame_offset": self.start_frame_offset,
+            "fps": self.fps,
+            "active_tracks": list(self.active_tracks or []),
+        }
+
+    def get_display_buffer(self):
+        """Буфер отображения — для инструментов замера."""
+        if self._playback is None:
+            return None
+        return self._playback.get_display_buffer()
+
+    # ------------------------------------------------------------------
     def _ensure_ready(self) -> bool:
         """Проверяет, что все компоненты инициализированы и готовы."""
         if self._closed:
@@ -252,6 +299,72 @@ class StreamController:
         return True
 
     # ------------------------------------------------------------------
+    # Публичное состояние (этап 1.2 рефакторинга)
+    # ------------------------------------------------------------------
+
+    def wait_ready(self, timeout: float = None) -> bool:
+        """
+        Блокирующее ожидание готовности.
+
+        Возвращает True, если инициализация завершилась за отведённое
+        время, иначе False. Успешное ожидание НЕ означает отсутствия
+        ошибки: событие взводится и при сбое, поэтому вызывающий обязан
+        отдельно проверить get_init_error().
+
+        Заменяет обращение вида self.player._ready.wait(timeout=120) —
+        работу с объектом синхронизации чужого класса, который при замене
+        Event на другой примитив сломался бы молча.
+        """
+        return self._ready.wait(timeout)
+
+    def get_components_state(self) -> dict:
+        """
+        Состояние всех компонентов одним вызовом — для телеметрии.
+
+        Каждый компонент отдаёт своё состояние сам; контроллер только
+        собирает. Раньше телеметрия обходила внутренности каждого объекта
+        напрямую и ломалась при любом переименовании поля.
+        """
+        state = {
+            "controller": {
+                "playing": self.playing,
+                "paused": self._paused,
+                "ready": self.is_ready(),
+                "closed": self._closed,
+                "init_error": self._init_error,
+                "total_frames": self.total_frames,
+                "start_frame_offset": self.start_frame_offset,
+                "active_tracks": list(self.active_tracks),
+                "finalized": self._finalized,
+            }
+        }
+
+        def add(name, fn):
+            try:
+                value = fn()
+                if value is not None:
+                    state[name] = value
+            except Exception:
+                pass
+
+        if self._playback is not None:
+            add("playback", self._playback.get_playback_state)
+            add("buffers", self._playback.get_buffer_state)
+        if self._pipeline is not None:
+            add("queues", self._pipeline.get_queue_sizes)
+            add("stages", self._pipeline.get_stage_status)
+            add("scheduler", self._pipeline.get_scheduler_state)
+            add("reader", self._pipeline.get_reader_state)
+            add("window", self._pipeline.get_window_bounds)
+        if self._seek_engine is not None:
+            add("seek_engine", self._seek_engine.get_state)
+        if self._lazy_index is not None:
+            add("index", self._lazy_index.get_index_state)
+            add("index_memory", self._lazy_index.get_memory_usage)
+        if self.master_clock is not None:
+            add("audio", self.master_clock.get_audio_state)
+        return state
+
     def start_playback(self):
         if not self._ensure_ready():
             return

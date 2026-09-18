@@ -212,12 +212,6 @@ class Telemetry:
         self._frame_info = {}
         self._files_info = {}
         self._audio_summary = {}
-        self._audio_stats = {
-            t: {"blocks": 0, "samples": 0, "dtype": None, "peak": 0.0,
-                "clipped": 0, "non_finite": 0, "rms_sum": 0.0, "rms_n": 0,
-                "min_block": None, "max_block": 0}
-            for t in (2, 3)
-        }
 
         self._last_snapshot = {}
         try:
@@ -393,112 +387,41 @@ class Telemetry:
         return dict(counts)
 
     # ------------------------------------------------------------------
-    def _ensure_audio_probe(self):
-        """
-        Оборачивает MasterClock.push_audio(), чтобы измерять КАЖДЫЙ блок PCM,
-        приходящий от декодера: тип, амплитуду, клиппинг, NaN/inf.
-
-        Иначе эти данные негде взять: блок живёт от декодера до очереди и
-        нигде не сохраняется. Обёртка ставится один раз (master_clock
-        создаётся не сразу, а в start_playback, поэтому проверяем на каждом
-        снимке) и просто вызывает оригинал — на воспроизведение не влияет.
-
-        Что ловим:
-        - dtype/амплитуда: если декодер отдаёт int16 (±32768), а поток
-          ожидает float32 в диапазоне -1..+1, astype() даст зашкал по всему
-          сигналу — это слышно как громкий треск/шум;
-        - clipping: доля сэмплов за пределами -1..+1;
-        - non_finite: NaN/inf от повреждённых кадров (обрезанные AAC-пакеты
-          при недочитанном чанке) — в звуке это щелчки;
-        - раздельная статистика по трекам 2 и 3 — расхождение дорожек.
-        """
-        c = self._controller
-        mc = getattr(c, "master_clock", None) if c else None
-        if mc is None or getattr(mc, "_telemetry_wrapped", False):
-            return
-
-        original = mc.push_audio
-        stats = self._audio_stats
-
-        def wrapped(track_id, samples):
-            try:
-                st = stats[track_id]
-                st["blocks"] += 1
-                n = int(getattr(samples, "size", 0) or 0)
-                st["samples"] += n
-                st["dtype"] = str(getattr(samples, "dtype", ""))
-                if n:
-                    import numpy as _np
-                    finite = _np.isfinite(samples)
-                    bad = int(n - int(finite.sum()))
-                    st["non_finite"] += bad
-                    if bad < n:
-                        vals = samples[finite]
-                        peak = float(_np.abs(vals).max()) if vals.size else 0.0
-                        st["peak"] = max(st["peak"], peak)
-                        st["clipped"] += int((_np.abs(vals) > 1.0).sum())
-                        st["rms_sum"] += float(_np.sqrt(_np.mean(vals.astype(_np.float64) ** 2)))
-                        st["rms_n"] += 1
-                    # Размеры блоков: скачки указывают на обрезанные пакеты.
-                    st["min_block"] = n if st["min_block"] is None else min(st["min_block"], n)
-                    st["max_block"] = max(st["max_block"], n)
-            except Exception:
-                pass
-            return original(track_id, samples)
-
-        try:
-            mc.push_audio = wrapped
-            mc._telemetry_wrapped = True
-            logging.getLogger("Telemetry").info("Аудио-проба установлена на push_audio()")
-        except Exception:
-            pass
-
     def _audio_metrics(self) -> dict:
         """
-        Метрики аудио: раздельно по трекам 2 и 3, плюс состояние очередей
-        MasterClock. Расхождение длин очередей между треками — прямой
-        признак того, что дорожки разъезжаются.
+        Метрики звука: качество подачи и очереди по дорожкам.
+
+        Раньше телеметрия ПОДМЕНЯЛА MasterClock.push_audio(), чтобы
+        измерять каждый блок PCM, и читала очереди _queue2/_queue3
+        напрямую. Подмена чужого метода работала, но ломалась молча при
+        изменении сигнатуры — и однажды сломалась, когда в push_audio
+        добавился параметр pts. Чтение приватных очередей ломалось при
+        смене их формата на пары (pts, samples).
+
+        Теперь измерение живёт там, где данные: MasterClock считает
+        качество в момент подачи и отдаёт через get_audio_diagnostics().
+        Телеметрия только запрашивает готовый результат.
         """
-        out = {"tracks": {}}
         c = self._controller
         mc = getattr(c, "master_clock", None) if c else None
+        if mc is None:
+            return {"tracks": {}}
 
-        for track_id, qattr in ((2, "_queue2"), (3, "_queue3")):
-            st = self._audio_stats.get(track_id, {})
-            info = {
-                "blocks": st.get("blocks", 0),
-                "samples": st.get("samples", 0),
-                "dtype": st.get("dtype"),
-                "peak": round(st.get("peak", 0.0), 3),
-                "clipped": st.get("clipped", 0),
-                "non_finite": st.get("non_finite", 0),
-                "min_block": st.get("min_block"),
-                "max_block": st.get("max_block"),
-            }
-            if st.get("rms_n"):
-                info["rms_avg"] = round(st["rms_sum"] / st["rms_n"], 4)
-            if mc is not None:
-                q = getattr(mc, qattr, None)
-                if q is not None:
-                    info["queue_blocks"] = _safe(lambda qq=q: len(qq), -1)
-                    info["queue_samples"] = _safe(
-                        lambda qq=q: int(sum(len(x) for x in qq)), -1)
-            out["tracks"][str(track_id)] = info
+        diag = _safe(lambda: mc.get_audio_diagnostics(), None)
+        if diag:
+            # Совместимость с прежним форматом снимка: имена полей,
+            # по которым построены отчёт и внешние скрипты.
+            diag.setdefault("track_drift_samples", diag.get("queue_drift_samples"))
+            diag.setdefault("track_drift_ms", diag.get("queue_drift_ms"))
+            return diag
 
-        # Расхождение дорожек — главный индикатор «двоящегося» звука.
-        q2 = out["tracks"].get("2", {}).get("queue_samples")
-        q3 = out["tracks"].get("3", {}).get("queue_samples")
-        if isinstance(q2, int) and isinstance(q3, int) and q2 >= 0 and q3 >= 0:
-            out["track_drift_samples"] = q2 - q3
-            out["track_drift_ms"] = round((q2 - q3) / 48.0, 1)
-
-        s2 = out["tracks"].get("2", {}).get("samples", 0)
-        s3 = out["tracks"].get("3", {}).get("samples", 0)
-        out["pushed_drift_samples"] = s2 - s3
-
-        if mc is not None:
-            out["underruns"] = _safe(lambda: getattr(mc, "_underruns", None))
+        # Запасной путь: старая версия MasterClock без диагностики.
+        out = {"tracks": {}}
+        for track_id in (2, 3):
+            st = _safe(lambda t=track_id: mc.get_track_state(t), {}) or {}
+            out["tracks"][str(track_id)] = st
         return out
+
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -609,7 +532,7 @@ class Telemetry:
             "playing": getattr(c, "playing", None),
             "paused": getattr(c, "_paused", None),
             "total_frames": getattr(c, "total_frames", None),
-            "ready": _safe(lambda: c._ready.is_set()),
+            "ready": _safe(lambda: c.is_ready()),
             "closed": getattr(c, "_closed", None),
             "init_error": getattr(c, "_init_error", None),
             "active_tracks": list(getattr(c, "active_tracks", []) or []),
@@ -670,13 +593,11 @@ class Telemetry:
 
         pipe = getattr(c, "_pipeline", None)
         if pipe is not None:
+            # Через публичные методы конвейера: раньше читались
+            # _raw_queue/_video_queue/_audio_queue и _stages напрямую.
             out["pipeline"] = _safe(lambda: {
-                "raw_queue": pipe._raw_queue.qsize(),
-                "video_queue": pipe._video_queue.qsize(),
-                "audio_queue": pipe._audio_queue.qsize(),
-                "stages": [getattr(s, "name", "?") for s in getattr(pipe, "_stages", [])],
-                "stages_alive": [bool(_safe(lambda st=s: st.is_alive()))
-                                 for s in getattr(pipe, "_stages", [])],
+                **(pipe.get_queue_sizes() or {}),
+                **(pipe.get_stage_status() or {}),
             }, {})
 
             win = _safe(lambda: pipe.get_window_snapshot())
@@ -688,42 +609,20 @@ class Telemetry:
                     "total_chunks": win.total_chunks,
                 }, {})
 
-            sch = getattr(pipe, "_scheduler", None)
-            if sch is not None:
-                out["scheduler"] = _safe(lambda: {
-                    "mode": str(getattr(sch, "_mode", "")),
-                    "current_chunk": getattr(sch, "_current_chunk", None),
-                    "total_chunks": getattr(sch, "_total_chunks", None),
-                    "loaded_count": getattr(sch, "loaded_count", None),
-                    "loading_allowed": getattr(sch, "_loading_allowed", None),
-                }, {})
+            # Планировщик — через конвейер: телеметрия не должна знать,
+            # что он вообще существует как отдельный объект.
+            out["scheduler"] = _safe(lambda: pipe.get_scheduler_state(), {})
 
-            # Ридер живёт внутри ReaderStage — достаём его состояние.
-            for stage in getattr(pipe, "_stages", []):
-                rd = getattr(stage, "_reader", None)
-                if rd is None:
-                    continue
-                out["reader"] = _safe(lambda: {
-                    "file_size": getattr(rd, "_file_size", None),
-                    "position": getattr(rd, "_position", None),
-                    "closed": getattr(rd, "_is_closed", None),
-                    "stats": dict(getattr(rd, "_stats", {}) or {}),
-                }, {})
-                break
+            # Состояние ридера — через конвейер. Раньше телеметрия сама
+            # обходила _stages, находила _reader и читала его приватные
+            # поля: связь через два уровня чужой реализации.
+            out["reader"] = _safe(lambda: pipe.get_reader_state(), {})
 
         se = getattr(c, "_seek_engine", None)
         if se is not None:
-            out["seek_engine"] = _safe(lambda: {
-                "generation": getattr(se, "_generation", None),
-                "workers": [
-                    {"id": w.id, "state": w.state,
-                     "buffer_count": getattr(w.buffer, "count", None),
-                     "alive": bool(w.thread.is_alive()) if getattr(w, "thread", None) else False}
-                    for w in getattr(se, "workers", [])
-                ],
-                "cmd_queue": _safe(lambda: se._command_queue.qsize(), -1),
-                "result_queue": _safe(lambda: se._result_queue.qsize(), -1),
-            }, {})
+            # Через публичный метод движка вместо чтения _generation,
+            # workers[].state и приватных очередей команд/результатов.
+            out["seek_engine"] = _safe(lambda: se.get_state(), {})
             # Суммарная память буферов seek-воркеров: у каждого свой
             # FrameRingBuffer, и при трёх воркерах это заметная величина,
             # которую легко упустить, глядя только на видеобуфер плеера.
@@ -736,17 +635,15 @@ class Telemetry:
 
         li = getattr(c, "_lazy_index", None)
         if li is not None:
-            out["lazy_index"] = _safe(lambda: {
-                "total_frames": getattr(li, "total_frames", None),
-                "mdat_end": getattr(li, "mdat_end", None),
-                "next_scan_element": getattr(li, "_next_scan_element", None),
-            }, {})
-            out["index_memory"] = self._index_memory(li)
+            # Публичные методы индекса вместо чтения _next_scan_element
+            # и прямого доступа к numpy-массивам.
+            out["lazy_index"] = _safe(lambda: li.get_index_state(), {})
+            out["index_memory"] = _safe(lambda: li.get_memory_usage(),
+                                        self._index_memory(li))
 
         out["files"] = self._files()
 
-        # Аудио: ставим пробу (если ещё не стоит) и снимаем метрики.
-        self._ensure_audio_probe()
+        # Аудио: измерение живёт внутри MasterClock, здесь только запрос.
         out["audio"] = self._audio_metrics()
         return out
 

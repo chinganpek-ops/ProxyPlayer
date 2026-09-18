@@ -180,7 +180,7 @@ class PlayerWidget(QWidget):
             action.setChecked(tid in self.active_tracks)
         self._updating_tracks = False
 
-        if self.player and self.player._ready.is_set():
+        if self.player and self.player.is_ready():
             self.player.set_active_tracks(self.active_tracks)
 
         self.render_timer = QTimer(self)
@@ -188,10 +188,25 @@ class PlayerWidget(QWidget):
         self._update_render_interval()
 
         self.video_widget.show_placeholder()
-        if not self.player._ready.wait(timeout=120):
+        # Ожидание готовности через публичный метод контроллера. Раньше
+        # интерфейс работал напрямую с объектом синхронизации чужого
+        # класса (self.player._ready.wait) — при замене Event на другой
+        # примитив такой код сломался бы молча.
+        if not self.player.wait_ready(timeout=120):
             QMessageBox.critical(self, "Ошибка", "Не удалось инициализировать плеер за 120 секунд")
             self.player.close()
             raise RuntimeError("StreamController initialization timeout")
+
+        # Успешное ожидание не означает успешной инициализации: событие
+        # взводится и при сбое. Проверяем ошибку отдельно, иначе окно
+        # открылось бы с неработающим контроллером, а причина осталась
+        # бы только в логе.
+        init_error = self.player.get_init_error()
+        if init_error:
+            QMessageBox.critical(self, "Ошибка",
+                                 f"Не удалось инициализировать плеер:\n{init_error}")
+            self.player.close()
+            raise RuntimeError(f"StreamController init error: {init_error}")
         
         self.setFocusPolicy(Qt.StrongFocus)
 
@@ -491,7 +506,7 @@ class PlayerWidget(QWidget):
                 total = self.player.total_frames
                 if total > 1:
                     max_slider = total - 1
-                    if not self.player._finalized: max_slider = max(0, total - 1600)
+                    if not self.player.is_finalized: max_slider = max(0, total - 1600)
                     if self.slider.maximum() != max_slider: self.slider.setRange(0, max_slider)
                 if self._active_player.playing:
                     self.slider.blockSignals(True)
@@ -547,7 +562,10 @@ class PlayerWidget(QWidget):
             self.render_timer.deleteLater(); self.render_timer = None
         self.player.close()
         self.player = self._create_controller()
-        self.player._ready.wait()
+        # Таймаут обязателен: без него сбой инициализации подвешивал бы
+        # GUI-поток навсегда — окно переставало отвечать вообще.
+        if not self.player.wait_ready(timeout=120):
+            logger.error("Перезапуск плеера: контроллер не готов за 120 с")
         self._active_player = self.player
         self.render_timer = QTimer(self)
         self.render_timer.timeout.connect(self._update_frame)

@@ -192,10 +192,18 @@ class SoakTest:
             mirror_path=str(mirror),
         )
 
-        if not self.controller._ready.wait(timeout=180):
-            raise RuntimeError("StreamController не инициализировался за 180 с")
-        if self.controller._init_error:
-            raise RuntimeError(f"Ошибка инициализации: {self.controller._init_error}")
+        # Готовность и ошибка запрашиваются публичными методами, а не
+        # чтением _ready/_init_error: инструмент не должен зависеть от
+        # того, как контроллер хранит своё состояние внутри.
+        deadline = time.monotonic() + 180
+        while not self.controller.is_ready():
+            if time.monotonic() > deadline:
+                raise RuntimeError("StreamController не инициализировался за 180 с")
+            time.sleep(0.2)
+
+        init_error = self.controller.get_init_error()
+        if init_error:
+            raise RuntimeError(f"Ошибка инициализации: {init_error}")
 
         # Телеметрия — необязательна, но с ней отчёт заметно информативнее.
         try:

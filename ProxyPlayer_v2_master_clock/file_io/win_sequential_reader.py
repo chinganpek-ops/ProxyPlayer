@@ -150,7 +150,7 @@ class WinSequentialReader:
         self,
         path: Path,
         buffer_size: int = 1024 * 1024,
-        read_timeout_ms: int = 5000,
+        read_timeout_ms: int = 50000,
         use_no_buffering: bool = False,
         max_cache_size: int = 10 * 1024 * 1024,  # 10 МБ
     ):

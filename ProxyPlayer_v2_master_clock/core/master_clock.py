@@ -8,6 +8,33 @@ master_clock.py – единый тактовый генератор на осн
 - get_audio_queue_samples() возвращает текущее количество сэмплов в очередях.
 - flush_audio() очищает очереди без сброса тактового счётчика (для seek).
 Логирование аудио-событий в audio_monitor.log через AudioMonitor.
+
+ИЗМЕНЕНИЯ (продакшен-ревью, диагностика "нет звука при старте"):
+- push_audio(): убрана проверка `if not self._active: return`. Она
+  отбрасывала ВСЁ декодированное аудио, поступавшее до вызова start()
+  (который происходит только при нажатии Play в resume()) — а конвейер
+  (ReaderStage/AudioDecoderStage) запускается заметно раньше, во время
+  начальной буферизации в PlaybackEngine.start_playback(). Поскольку
+  выброшенные сэмплы не увеличивали get_audio_queue_samples(), гистерезис
+  AudioDecoderStage (45%/55%) не видел реального заполнения и не
+  тормозил декодирование аудио — в отличие от видео, которое корректно
+  тормозится своим буфером (buffer_size кадров). Когда видеобуфер
+  заполнялся, общий для видео и аудио StreamScheduler останавливал
+  чтение чанков целиком — то есть к моменту нажатия Play звук для уже
+  прочитанного видео (до ~buffer_size кадров вперёд) был безвозвратно
+  потерян, а новое чтение возобновлялось только после того, как
+  воспроизведение растратит буфер ниже 60% — то есть реальный, иногда
+  многосекундный провал звука в начале.
+  Теперь push_audio() всегда кладёт сэмплы в очередь независимо от
+  self._active — вывод (потребление очереди) по-прежнему происходит
+  только в _callback(), который запускается лишь пока поток реально
+  активен (sounddevice сам не дёргает callback, пока stream не
+  запущен/после stop()), так что тишина до нажатия Play сохраняется
+  ровно как раньше — просто теперь за счёт того, что поток не запущен
+  и никто не потребляет очередь, а не за счёт отбрасывания данных на
+  входе. Гистерезис в AudioDecoderStage теперь получает реальные цифры
+  уже во время начальной буферизации и тормозит декодирование аудио
+  симметрично видео — как и было задумано.
 """
 
 import threading
@@ -61,6 +88,27 @@ class MasterClock:
         # Статистика
         self._underruns = 0
         self._max_queue_len = 0
+
+        # Статистика качества подаваемого звука по дорожкам.
+        #
+        # Собирается здесь, а не внешним наблюдателем, потому что блок PCM
+        # живёт от декодера до очереди и нигде больше не сохраняется:
+        # измерить его снаружи можно было только подменой push_audio, а
+        # такая подмена ломается молча при любом изменении сигнатуры.
+        #
+        # Что именно считается и зачем:
+        #   peak        — амплитуда вне диапазона -1..+1 означает, что
+        #                 декодер отдаёт целочисленные сэмплы, а поток
+        #                 ожидает float32: слышно как громкий треск;
+        #   clipped     — доля сэмплов за пределами диапазона;
+        #   non_finite  — NaN/inf от повреждённых пакетов, в звуке щелчки;
+        #   min/max_block — разброс размера блока выдаёт обрезанные пакеты.
+        self._track_stats = {
+            t: {"blocks": 0, "samples": 0, "dtype": None, "peak": 0.0,
+                "clipped": 0, "non_finite": 0, "rms_sum": 0.0, "rms_n": 0,
+                "min_block": None, "max_block": 0}
+            for t in (2, 3)
+        }
 
         # Флаг доступности устройства
         self._device_available = True
@@ -127,18 +175,36 @@ class MasterClock:
     # ------------------------------------------------------------------
     # Очереди аудио
     # ------------------------------------------------------------------
-    def push_audio(self, track_id: int, samples: np.ndarray):
+    def push_audio(self, track_id: int, samples: np.ndarray, pts: int = None):
         """
         Добавляет декодированные аудиосемплы (float64, моно) в очередь дорожки.
         Вызывается из AudioDecoderStage.
+
+        ПРАВКА: раньше здесь был ранний выход `if not self._active: return`,
+        из-за которого всё аудио, декодированное до первого вызова start()
+        (то есть до нажатия Play), терялось молча — см. докстринг модуля.
+        Очередь принимает данные всегда; воспроизведение (потребление
+        очереди) всё равно происходит только в _callback(), который
+        sounddevice вызывает исключительно пока поток запущен — тишина до
+        нажатия Play сохраняется, просто не ценой потери данных на входе.
         """
-        if not self._active:
-            return
+        block = samples.astype(np.float32)
+        self._collect_track_stats(track_id, samples, block)
+
+        # PTS блока. Если вызывающий его не передал, продолжаем прежнюю
+        # последовательную укладку: блок помечается временем, следующим за
+        # концом уже накопленного. Так старый вызов остаётся рабочим, а
+        # новый получает точное позиционирование.
         with self._queue_lock:
-            if track_id == 2 and self._track2_enabled:
-                self._queue2.append(samples.astype(np.float32))
-            elif track_id == 3 and self._track3_enabled:
-                self._queue3.append(samples.astype(np.float32))
+            queue = self._queue2 if track_id == 2 else self._queue3
+            enabled = self._track2_enabled if track_id == 2 else self._track3_enabled
+            if track_id not in (2, 3) or not enabled:
+                return
+
+            if pts is None:
+                pts = (queue[-1][0] + len(queue[-1][1])) if queue else self.samples_played
+
+            queue.append((int(pts), block))
             self._max_queue_len = max(self._max_queue_len,
                                       len(self._queue2) + len(self._queue3))
 
@@ -153,9 +219,159 @@ class MasterClock:
     def get_audio_queue_samples(self) -> int:
         """Возвращает суммарное количество аудиосэмплов во всех очередях."""
         with self._queue_lock:
-            total = sum(len(chunk) for chunk in self._queue2)
-            total += sum(len(chunk) for chunk in self._queue3)
+            total = sum(len(item[1]) for item in self._queue2)
+            total += sum(len(item[1]) for item in self._queue3)
             return total
+
+    def _collect_track_stats(self, track_id: int, raw, block) -> None:
+        """
+        Измеряет качество блока PCM. Вызывается из push_audio до укладки
+        в очередь. Ошибки подавляются: диагностика не должна мешать
+        воспроизведению.
+        """
+        st = self._track_stats.get(track_id)
+        if st is None:
+            return
+        try:
+            n = int(block.size)
+            st["blocks"] += 1
+            st["samples"] += n
+            st["dtype"] = str(getattr(raw, "dtype", ""))
+            if not n:
+                return
+            st["min_block"] = n if st["min_block"] is None else min(st["min_block"], n)
+            st["max_block"] = max(st["max_block"], n)
+
+            finite = np.isfinite(block)
+            bad = int(n - int(finite.sum()))
+            st["non_finite"] += bad
+            if bad >= n:
+                return
+            vals = block[finite]
+            peak = float(np.abs(vals).max())
+            if peak > st["peak"]:
+                st["peak"] = peak
+            st["clipped"] += int((np.abs(vals) > 1.0).sum())
+            st["rms_sum"] += float(np.sqrt(np.mean(vals.astype(np.float64) ** 2)))
+            st["rms_n"] += 1
+        except Exception:
+            pass
+
+    def get_underruns(self) -> int:
+        """
+        Число случаев, когда данных не хватило на очередной вызов вывода.
+
+        Отдельный метод, а не поле _underruns: это самая частая метрика в
+        инструментах замера, и запрашивать ради неё полный get_stats()
+        (который трогает состояние устройства и очередей) избыточно.
+        """
+        return self._underruns
+
+    def get_track_quality(self, track_id: int) -> dict:
+        """
+        Качество подаваемого звука по дорожке: амплитуда, клиппинг,
+        NaN/inf, разброс размера блока.
+
+        Заменяет подмену push_audio внешним наблюдателем.
+        """
+        st = self._track_stats.get(track_id)
+        if st is None:
+            return {}
+        out = {
+            "blocks": st["blocks"],
+            "samples": st["samples"],
+            "dtype": st["dtype"],
+            "peak": round(st["peak"], 4),
+            "clipped": st["clipped"],
+            "non_finite": st["non_finite"],
+            "min_block": st["min_block"],
+            "max_block": st["max_block"],
+        }
+        if st["rms_n"]:
+            out["rms_avg"] = round(st["rms_sum"] / st["rms_n"], 5)
+        return out
+
+    def get_audio_diagnostics(self) -> dict:
+        """
+        Полная диагностика звука: качество и очереди по обеим дорожкам
+        плюс расхождение между ними.
+
+        Расхождение подачи — прямой признак того, что дорожки разъезжаются:
+        именно по нему обнаружилось расхождение в 3.4 секунды до перехода
+        на выравнивание по PTS.
+        """
+        out = {"tracks": {}, "underruns": self._underruns}
+        pushed = {}
+        for track_id in (2, 3):
+            q = self.get_track_state(track_id)
+            q.update(self.get_track_quality(track_id))
+            out["tracks"][str(track_id)] = q
+            pushed[track_id] = q.get("samples", 0)
+
+        out["pushed_drift_samples"] = pushed.get(2, 0) - pushed.get(3, 0)
+        q2 = self.get_track_queue_samples(2)
+        q3 = self.get_track_queue_samples(3)
+        out["queue_drift_samples"] = q2 - q3
+        out["queue_drift_ms"] = round((q2 - q3) / (self.sample_rate / 1000.0), 1)
+        return out
+
+    def get_track_queue_samples(self, track_id: int) -> int:
+        """Сэмплы в очереди ОДНОЙ дорожки — для диагностики расхождения."""
+        with self._queue_lock:
+            queue = self._queue2 if track_id == 2 else self._queue3
+            return sum(len(item[1]) for item in queue)
+
+    def get_track_state(self, track_id: int) -> dict:
+        """
+        Состояние одной дорожки: блоки, сэмплы, диапазон PTS, включена ли.
+
+        Заменяет чтение _queue2/_queue3 телеметрией и инструментами
+        замера. Диапазон PTS полезен для диагностики: по нему видно, какой
+        участок звука лежит в очереди относительно текущих часов.
+        """
+        with self._queue_lock:
+            queue = self._queue2 if track_id == 2 else self._queue3
+            enabled = self._track2_enabled if track_id == 2 else self._track3_enabled
+            blocks = len(queue)
+            samples = sum(len(item[1]) for item in queue)
+            first_pts = int(queue[0][0]) if blocks else None
+            last_pts = int(queue[-1][0] + len(queue[-1][1])) if blocks else None
+        return {
+            "track": track_id,
+            "enabled": enabled,
+            "blocks": blocks,
+            "samples": samples,
+            "first_pts": first_pts,
+            "last_pts": last_pts,
+        }
+
+    def get_audio_state(self) -> dict:
+        """Сводное состояние звука: часы, дорожки, underrun, mute."""
+        return {
+            "clock": self.get_audio_clock(),
+            "samples_played": self.samples_played,
+            "underruns": self._underruns,
+            "muted": self._muted,
+            "active": self._active,
+            "device_available": self._device_available,
+            "max_queue_samples": self.max_audio_queue_samples,
+            "tracks": {
+                "2": self.get_track_state(2),
+                "3": self.get_track_state(3),
+            },
+        }
+
+    def get_tracks_state(self) -> dict:
+        """Состояние обеих дорожек и их расхождение в сэмплах."""
+        t2 = self.get_track_state(2)
+        t3 = self.get_track_state(3)
+        return {
+            "2": t2,
+            "3": t3,
+            "drift_samples": t2["samples"] - t3["samples"],
+            "underruns": self._underruns,
+            "muted": self._muted,
+        }
 
     def flush_audio(self):
         """
@@ -176,32 +392,89 @@ class MasterClock:
             logger.debug("Sounddevice status: %s", status)
 
         with self._clock_lock:
+            block_start_pts = self._samples_played      # время начала блока
             self._samples_played += frames
 
         outdata.fill(0.0)
         if self._muted:
             return
 
+        # Обе дорожки выравниваются по ОДНОМУ И ТОМУ ЖЕ времени, поэтому
+        # разойтись не могут даже при неравномерной подаче.
         if self._track2_enabled:
-            self._mix_channel(outdata, 0, self._queue2, frames)
+            self._mix_channel(outdata, 0, self._queue2, frames, block_start_pts)
         if self._track3_enabled:
-            self._mix_channel(outdata, 1, self._queue3, frames)
+            self._mix_channel(outdata, 1, self._queue3, frames, block_start_pts)
 
-    def _mix_channel(self, outdata, channel_idx, queue, frames):
-        """Заполняет канал channel_idx данными из очереди."""
+    def _mix_channel(self, outdata, channel_idx, queue, frames, block_start_pts):
+        """
+        Заполняет канал данными из очереди, ВЫРАВНИВАЯ их по времени.
+
+        Раньше блоки укладывались подряд, в порядке поступления, без учёта
+        того, какому моменту они соответствуют. Пока подача обеих дорожек
+        шла ровно, это работало; но стоило одной дорожке недосчитаться
+        пакетов — а на реальных записях в индексе встречаются разрывы —
+        каналы сдвигались друг относительно друга, и ДОГНАТЬ БЫЛО НЕЧЕМ:
+        каждый канал просто продолжал играть свою очередь по порядку.
+        Расхождение фиксировалось навсегда и только росло.
+
+        Теперь позиция каждого блока определяется его PTS:
+
+        - блок целиком в прошлом  -> выбрасывается (опоздал);
+        - блок начинается позже   -> до его начала выводится тишина,
+                                     то есть разрыв в записи слышен как
+                                     пауза, а не сдвигает всё последующее;
+        - блок перекрывает точку  -> берётся с нужного смещения внутрь.
+
+        Обе дорожки выравниваются по одному и тому же block_start_pts,
+        поэтому расходиться не могут в принципе, а после разрыва каждая
+        самостоятельно возвращается на своё место.
+        """
         written = 0
+        dropped_late = 0
+        silence_gap = 0
+
         while written < frames:
             with self._queue_lock:
-                if queue:
-                    chunk = queue.popleft()
-                else:
+                if not queue:
                     break
-            take = min(len(chunk), frames - written)
-            outdata[written:written+take, channel_idx] = chunk[:take]
-            if take < len(chunk):
-                with self._queue_lock:
-                    queue.appendleft(chunk[take:])
+                pts, chunk = queue[0]
+
+                target_pts = block_start_pts + written
+                chunk_end = pts + len(chunk)
+
+                if chunk_end <= target_pts:
+                    # Блок целиком в прошлом: воспроизводить его уже поздно.
+                    queue.popleft()
+                    dropped_late += 1
+                    continue
+
+                if pts > target_pts:
+                    # Данные этого момента ещё не наступили — разрыв.
+                    # Оставляем тишину ровно на его длину.
+                    gap = min(frames - written, pts - target_pts)
+                    written += gap
+                    silence_gap += gap
+                    continue
+
+                skip = target_pts - pts               # >= 0
+                take = min(len(chunk) - skip, frames - written)
+                outdata[written:written + take, channel_idx] = chunk[skip:skip + take]
+
+                if skip + take >= len(chunk):
+                    queue.popleft()
+                else:
+                    # Остаток блока остаётся в очереди со сдвинутым PTS.
+                    queue[0] = (pts + skip + take, chunk[skip + take:])
+
             written += take
+
+        if silence_gap:
+            audio_monitor_logger.debug(
+                f"AUDIO_GAP channel={channel_idx} samples={silence_gap}")
+        if dropped_late:
+            audio_monitor_logger.debug(
+                f"AUDIO_LATE channel={channel_idx} blocks={dropped_late}")
         if written < frames:
             self._underruns += 1
             audio_monitor_logger.debug(f"AUDIO_UNDERRUN channel={channel_idx} missing={frames - written}")

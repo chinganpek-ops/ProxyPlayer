@@ -65,6 +65,25 @@ lazy_index.py – оконный доступ к индексу для ProxyPlay
   только дописываются в конец, старые байты никогда не меняются) — так
   описан ваш сценарий (сначала 12 видео-записей, затем аудио к ним,
   монотонно в конец файла).
+ИЗМЕНЕНИЯ (правки продакшен-ревью, итерация 5 — оконное аудио):
+- Сырые аудиозаписи 0xC9 больше НЕ ХРАНЯТСЯ. Раньше LazyIndex держал два
+  представления одновременно: сырой _all_c9 (68 байт на запись) и
+  производный _audio_tracks_full (28 байт), то есть 96 байт на запись.
+  На восьмичасовой записи (около 11 млн аудиозаписей) это почти гигабайт
+  в КАЖДОМ процессе плеера. Теперь сырая порция преобразуется в
+  компактный вид сразу при поступлении и отпускается: остаётся только
+  _audio_tracks_full. Экономия около 71%.
+- _audio_tracks_full накапливается ИНКРЕМЕНТАЛЬНО (_append_audio).
+  Раньше он сбрасывался в None на каждом обновлении индекса и
+  пересобирался целиком при следующем построении окна — полный проход по
+  всем аудиозаписям файла каждые несколько секунд. Теперь работа
+  пропорциональна приросту. Корректность size2 на границе порций
+  обеспечивается дозаполнением хвостовой записи каждой дорожки и
+  проверена на эквивалентность обработке одной порцией.
+- Срез аудио для окна (_slice_audio) использует двоичный поиск вместо
+  булевой маски, когда PTS монотонны. Маска выделяла булев массив по
+  числу ВСЕХ аудиозаписей при каждом построении окна.
+
 - Добавлен _full_rescan() — аварийный откат на полный пересчёт индекса с
   нуля, если remap_idx_incremental() вдруг увидит файл короче, чем уже
   просканировано (признак пересоздания/усечения файла, а не чистого
@@ -188,13 +207,22 @@ class LazyIndex:
         # полному open_idx_mmap(), но дополнительно даёт next_scan_element —
         # границу, с которой refresh_from_disk() продолжит дочитывать
         # только новый хвост файла (см. idx_cache._scan_markers).
-        self._all_193, self._all_c9, self._next_scan_element = remap_idx_incremental(
+        all_193, all_c9, self._next_scan_element = remap_idx_incremental(
             mirror_path, start_element=0
         )
+        self._all_193 = all_193
 
         # Полные video_records (глобальные индексы)
-        self._video_records_full = _filter_normal_records(self._all_193)
-        self._audio_tracks_full: Optional[np.ndarray] = None  # ленивая загрузка
+        self._video_records_full = _filter_normal_records(all_193)
+
+        # Аудио: сырые записи 0xC9 сразу преобразуются в компактный
+        # DTYPE_AUDIO и БОЛЬШЕ НЕ ХРАНЯТСЯ. См. _append_audio().
+        self._audio_tracks_full: np.ndarray = np.empty(0, dtype=DTYPE_AUDIO)
+        self._audio_pts_sorted: Optional[bool] = None
+        self._append_audio(all_c9)
+        # Сырой массив больше не нужен: всё, что из него требуется,
+        # уже перенесено в _audio_tracks_full.
+        self._all_c9 = None
 
         self._window: Optional[IndexWindow] = None
         # RLock, а не Lock: build_slid_window()/expand_window() реентерабельно
@@ -203,6 +231,78 @@ class LazyIndex:
 
         # Параметры окна
         self.default_window_seconds = 300.0  # 5 минут
+
+    # ------------------------------------------------------------------
+    def _append_audio(self, new_c9) -> int:
+        """
+        Преобразует новую порцию сырых записей 0xC9 в компактный
+        DTYPE_AUDIO и присоединяет к накопленному массиву.
+
+        Зачем это нужно. Раньше LazyIndex держал ОБА представления
+        одновременно: сырые записи `_all_c9` (68 байт на запись) и
+        производный `_audio_tracks_full` (28 байт). При этом производный
+        сбрасывался в None на каждом обновлении индекса и пересобирался
+        из полного сырого массива при следующем построении окна — то есть
+        полный проход по всем аудиозаписям файла каждые несколько секунд.
+
+        На восьмичасовой записи (порядка 11 млн аудиозаписей) это
+        означало около 740 МБ сырых данных плюс 305 МБ производных в
+        КАЖДОМ процессе плеера, и пересборку 305 МБ каждые 5 секунд.
+
+        Теперь сырые записи живут ровно столько, сколько нужно на
+        преобразование, и отпускаются. Хранится только компактное
+        представление, и только приростом.
+
+        Тонкость с size2. Длина второй части пакета вычисляется как
+        расстояние до следующей записи ТОЙ ЖЕ дорожки. У последней записи
+        каждой дорожки следующей ещё нет, поэтому size2 остаётся нулевым.
+        Когда приходит новая порция, эти "хвостовые" записи нужно
+        дозаполнить — иначе на каждой границе порций терялась бы вторая
+        половина аудиопакета.
+
+        Возвращает число добавленных записей.
+        """
+        if new_c9 is None or len(new_c9) == 0:
+            return 0
+
+        new_audio = build_audio_tracks(new_c9, track_filter=DEFAULT_TRACK_FILTER)
+        if len(new_audio) == 0:
+            return 0
+
+        old_audio = self._audio_tracks_full
+        if old_audio is None or len(old_audio) == 0:
+            self._audio_tracks_full = new_audio
+            self._audio_pts_sorted = None
+            return len(new_audio)
+
+        old_len = len(old_audio)
+        merged = np.concatenate([old_audio, new_audio])
+
+        # Дозаполняем size2 у последней записи каждой дорожки из прошлой
+        # порции: теперь у неё появился следующий сосед.
+        for track_id in DEFAULT_TRACK_FILTER:
+            idx = np.where(merged["track"] == track_id)[0]
+            if len(idx) < 2:
+                continue
+            prev_tail = idx[idx < old_len]
+            next_head = idx[idx >= old_len]
+            if not len(prev_tail) or not len(next_head):
+                continue
+            a = int(prev_tail[-1])
+            b = int(next_head[0])
+            gap = int(merged["abs_offset"][b]) - (
+                int(merged["abs_offset"][a]) + int(merged["size1"][a])
+            )
+            merged["size2"][a] = max(0, gap)
+
+        self._audio_tracks_full = merged
+        self._audio_pts_sorted = None       # пересчитать при следующем срезе
+        return len(new_audio)
+
+    @property
+    def audio_records_count(self) -> int:
+        """Число накопленных аудиозаписей (для диагностики и телеметрии)."""
+        return 0 if self._audio_tracks_full is None else len(self._audio_tracks_full)
 
     @property
     def window(self) -> Optional[IndexWindow]:
@@ -214,6 +314,20 @@ class LazyIndex:
         return len(self._video_records_full)
 
     # ------------------------------------------------------------------
+
+    def get_window_bounds(self) -> Optional[dict]:
+        """Границы активного окна без выдачи самого окна наружу."""
+        with self._lock:
+            w = self._window
+            if w is None:
+                return None
+            return {
+                "start_frame": w.window_start_frame,
+                "end_frame": w.window_end_frame,
+                "start_chunk": w.window_start_chunk,
+                "total_chunks": w.total_chunks,
+            }
+
     def open_window(
         self, center_frame: int, window_seconds: float = None
     ) -> IndexWindow:
@@ -430,16 +544,15 @@ class LazyIndex:
                     )
                     got_new_video = True
 
+            got_new_audio = 0
             if len(new_c9) > 0:
-                self._all_c9 = np.concatenate([self._all_c9, new_c9])
-                # Полный список аудио-треков (self._audio_tracks_full)
-                # строится лениво в _build_window() через build_audio_tracks(),
-                # которая считает size2 по разнице СОСЕДНИХ записей одной
-                # дорожки — это нельзя просто дописать в хвост без
-                # пересчёта границы. Инвалидируем: следующий _build_window()
-                # пересоберёт его из уже накопленного (и по-прежнему
-                # заметно меньшего, чем полный файл) self._all_c9.
-                self._audio_tracks_full = None
+                # Преобразуем порцию в компактный вид и отпускаем сырые
+                # записи. Раньше сырой массив дописывался в _all_c9, а
+                # производный сбрасывался в None — то есть при следующем
+                # построении окна пересобирался ПОЛНОСТЬЮ, проходом по
+                # всем аудиозаписям файла. Теперь работа пропорциональна
+                # приросту, а память — только компактному представлению.
+                got_new_audio = self._append_audio(new_c9)
 
             # ПРАВКА (продакшен-ревью, растущий mdat): mdat_end задавался
             # ОДИН раз при создании LazyIndex (get_real_size в
@@ -459,7 +572,7 @@ class LazyIndex:
             # индекса; PlaybackEngine остаётся только потребителем.
             self._refresh_mdat_end()
 
-            return got_new_video or len(new_c9) > 0
+            return got_new_video or got_new_audio > 0
 
     def _full_rescan(self) -> bool:
         """
@@ -478,10 +591,14 @@ class LazyIndex:
             return False
 
         self._all_193 = all_193
-        self._all_c9 = all_c9
         self._next_scan_element = next_scan_element
         self._video_records_full = _filter_normal_records(all_193)
-        self._audio_tracks_full = None
+        # Пересобираем аудио с нуля: инкрементальное состояние признано
+        # недостоверным, поэтому накопленное отбрасывается целиком.
+        self._audio_tracks_full = np.empty(0, dtype=DTYPE_AUDIO)
+        self._audio_pts_sorted = None
+        self._append_audio(all_c9)
+        self._all_c9 = None
         self._refresh_mdat_end()
         return True
 
@@ -522,6 +639,50 @@ class LazyIndex:
             logger.warning("MP4 стал короче: mdat_end %d -> %d (%s)",
                            self.mdat_end, new_end, self.mp4_path)
             self.mdat_end = new_end
+
+    def get_index_state(self) -> dict:
+        """
+        Состояние индекса: сколько кадров и аудиозаписей накоплено, где
+        граница файла и докуда просканировано зеркало.
+
+        Раньше эти величины читались из _video_records_full,
+        _next_scan_element и _audio_tracks_full напрямую.
+        """
+        with self._lock:
+            window = self._window
+            return {
+                "total_frames": len(self._video_records_full),
+                "audio_records": (0 if self._audio_tracks_full is None
+                                  else len(self._audio_tracks_full)),
+                "mdat_end": self.mdat_end,
+                "next_scan_element": self._next_scan_element,
+                "window_start_frame": window.window_start_frame if window else None,
+                "window_end_frame": window.window_end_frame if window else None,
+                "window_total_chunks": window.total_chunks if window else 0,
+            }
+
+    def get_memory_usage(self) -> dict:
+        """
+        Фактический объём массивов индекса в байтах.
+
+        Нужен для оценки расхода памяти при нескольких окнах: индекс —
+        единственная величина, растущая линейно с длительностью записи.
+        """
+        def nbytes(arr):
+            try:
+                return int(arr.nbytes) if arr is not None else 0
+            except Exception:
+                return 0
+
+        with self._lock:
+            return {
+                "video_records": nbytes(self._video_records_full),
+                "audio_tracks": nbytes(self._audio_tracks_full),
+                "raw_193": nbytes(self._all_193),
+                "total": (nbytes(self._video_records_full)
+                          + nbytes(self._audio_tracks_full)
+                          + nbytes(self._all_193)),
+            }
 
     def close(self):
         """Освобождает ресурсы."""
@@ -569,6 +730,38 @@ class LazyIndex:
 
         return start_frame, end_frame
 
+    def _slice_audio(self, start_pts: int, end_pts: int) -> np.ndarray:
+        """
+        Возвращает аудиозаписи в диапазоне [start_pts, end_pts).
+
+        Записи отсортированы по abs_offset, а не по pts, поэтому
+        двоичный поиск применим не всегда: дорожки чередуются, и в местах
+        дефектов разметки порядок по времени может нарушаться. Поэтому
+        сначала проверяется монотонность (одно сравнение по массиву), и
+        только при её наличии используется searchsorted; иначе —
+        обычная маска.
+
+        Разница существенна на длинных файлах: маска выделяет булев
+        массив по числу ВСЕХ аудиозаписей (около 11 млн на восьми часах)
+        при каждом построении окна, тогда как двоичный поиск даёт срез
+        без выделения памяти.
+        """
+        audio = self._audio_tracks_full
+        if audio is None or len(audio) == 0:
+            return np.empty(0, dtype=DTYPE_AUDIO)
+
+        pts = audio["pts"]
+        if self._audio_pts_sorted is None:
+            self._audio_pts_sorted = bool(np.all(pts[1:] >= pts[:-1])) if len(pts) > 1 else True
+
+        if self._audio_pts_sorted:
+            lo = int(np.searchsorted(pts, start_pts, side="left"))
+            hi = int(np.searchsorted(pts, end_pts, side="left"))
+            return audio[lo:hi]
+
+        mask = (pts >= start_pts) & (pts < end_pts)
+        return audio[mask]
+
     def _build_window(self, start_frame: int, end_frame: int) -> IndexWindow:
         """Строит IndexWindow с локальными индексами для указанного диапазона."""
         # 1. Видео-записи в диапазоне (срез — view, не копия)
@@ -577,21 +770,16 @@ class LazyIndex:
         # 2. Кэшируем абсолютные смещения ОДИН раз
         cached_offsets = _abs_offset(video_slice) if len(video_slice) > 0 else np.array([], dtype=np.uint64)
 
-        # 3. Аудио-записи (ленивая загрузка полных треков при первом обращении)
-        if self._audio_tracks_full is None:
-            self._audio_tracks_full = build_audio_tracks(
-                self._all_c9, track_filter=DEFAULT_TRACK_FILTER
-            )
-
-        # Определяем PTS-границы для аудио в этом окне
+        # 3. Аудио-записи окна.
+        #
+        # Полный массив накапливается инкрементально в _append_audio(),
+        # здесь берётся только срез по PTS-границам окна. Раньше на этом
+        # месте при каждом построении окна пересобирался ВЕСЬ список
+        # аудиотреков — он сбрасывался в None на каждом обновлении индекса.
         start_pts = (start_frame // FRAMES_PER_CHUNK) * SAMPLES_PER_CHUNK
         end_pts = ((end_frame + FRAMES_PER_CHUNK - 1) // FRAMES_PER_CHUNK) * SAMPLES_PER_CHUNK
 
-        audio_mask = (
-            (self._audio_tracks_full['pts'] >= start_pts)
-            & (self._audio_tracks_full['pts'] < end_pts)
-        )
-        audio_slice = self._audio_tracks_full[audio_mask]
+        audio_slice = self._slice_audio(start_pts, end_pts)
 
         # 4. Чанки для видео в окне (используем кэшированные смещения)
         chunk_offsets, chunk_sizes = build_chunks_from_cached_offsets(

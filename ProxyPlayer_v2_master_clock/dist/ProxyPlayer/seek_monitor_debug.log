@@ -1,6 +1,0 @@
-2026-08-27 12:48:49 | INFO     | MainThread           | Qt message handler установлен
-2026-08-27 12:48:49 | INFO     | MainThread           | Мониторинг Seek включён (ожидание объектов)
-2026-08-27 12:49:34 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\dist\\ProxyPlayer\\ProxyPlayer.exe") is still running.
-2026-08-27 12:49:34 | WARNING  | MainThread           | Qt Warning: QProcess: Destroyed while process ("C:\\development\\ProxyPlayer\\ProxyPlayer_v2_master_clock\\dist\\ProxyPlayer\\ProxyPlayer.exe") is still running.
-2026-08-27 12:49:34 | INFO     | MainThread           | Процесс завершается. Активные потоки:
-2026-08-27 12:49:34 | INFO     | MainThread           |   - MainThread (daemon=False, alive=False)

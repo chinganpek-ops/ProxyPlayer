@@ -14,7 +14,7 @@ from PyQt5.QtCore import QStandardPaths
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "buffer_size": 800,
+    "buffer_size": 360,
     "free_slots_required": 25,
     "drop_window_backward": 300,
     "drop_window_forward": 300,
