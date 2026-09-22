@@ -89,6 +89,13 @@ class MasterClock:
         self._underruns = 0
         self._max_queue_len = 0
 
+        # Предел опережения блока относительно текущего времени (сэмплы).
+        # Блок дальше этого считается устаревшим и выбрасывается — см.
+        # _mix_channel. Секунда с запасом отделяет настоящие разрывы
+        # записи (десятки миллисекунд) от данных со старой позиции.
+        self._max_future_lead = sample_rate * 1
+        self._stale_dropped = 0
+
         # Статистика качества подаваемого звука по дорожкам.
         #
         # Собирается здесь, а не внешним наблюдателем, потому что блок PCM
@@ -300,7 +307,8 @@ class MasterClock:
         именно по нему обнаружилось расхождение в 3.4 секунды до перехода
         на выравнивание по PTS.
         """
-        out = {"tracks": {}, "underruns": self._underruns}
+        out = {"tracks": {}, "underruns": self._underruns,
+               "stale_dropped": self._stale_dropped}
         pushed = {}
         for track_id in (2, 3):
             q = self.get_track_state(track_id)
@@ -406,6 +414,9 @@ class MasterClock:
         if self._track3_enabled:
             self._mix_channel(outdata, 1, self._queue3, frames, block_start_pts)
 
+        if self._muted:
+            outdata.fill(0.0)
+
     def _mix_channel(self, outdata, channel_idx, queue, frames, block_start_pts):
         """
         Заполняет канал данными из очереди, ВЫРАВНИВАЯ их по времени.
@@ -432,6 +443,7 @@ class MasterClock:
         """
         written = 0
         dropped_late = 0
+        dropped_stale = 0
         silence_gap = 0
 
         while written < frames:
@@ -447,6 +459,30 @@ class MasterClock:
                     # Блок целиком в прошлом: воспроизводить его уже поздно.
                     queue.popleft()
                     dropped_late += 1
+                    continue
+
+                if pts - target_pts > self._max_future_lead:
+                    # Блок опережает текущее время на недопустимую
+                    # величину — это не разрыв в записи, а УСТАРЕВШИЕ
+                    # данные со старой позиции.
+                    #
+                    # Возникает при перемотке НАЗАД: пока выполняется
+                    # переключение, непрерывно работающий декодер звука
+                    # успевает дослать пакеты прежней позиции. Их PTS
+                    # оказывается далеко впереди новых часов. Без этой
+                    # проверки такой блок считался бы "будущим разрывом":
+                    # микшер ждал бы его наступления, писал тишину и не
+                    # забирал блок из очереди. Новые данные вставали бы в
+                    # очередь ЗА ним и не доходили никогда. Очередь
+                    # переполнялась, декодер звука вставал по гистерезису,
+                    # следом блокировался демуксер, и через 15-20 секунд
+                    # останавливалось видео — при бегущем таймкоде.
+                    #
+                    # Настоящие разрывы в записи составляют доли секунды
+                    # (на проверенных файлах — 1024 сэмпла, 21 мс), поэтому
+                    # порог в секунду отделяет их от мусора с запасом.
+                    queue.popleft()
+                    dropped_stale += 1
                     continue
 
                 if pts > target_pts:
@@ -475,6 +511,10 @@ class MasterClock:
         if dropped_late:
             audio_monitor_logger.debug(
                 f"AUDIO_LATE channel={channel_idx} blocks={dropped_late}")
+        if dropped_stale:
+            self._stale_dropped += dropped_stale
+            audio_monitor_logger.debug(
+                f"AUDIO_STALE channel={channel_idx} blocks={dropped_stale}")
         if written < frames:
             self._underruns += 1
             audio_monitor_logger.debug(f"AUDIO_UNDERRUN channel={channel_idx} missing={frames - written}")

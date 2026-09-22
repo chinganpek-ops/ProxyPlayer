@@ -595,10 +595,29 @@ class Telemetry:
         if pipe is not None:
             # Через публичные методы конвейера: раньше читались
             # _raw_queue/_video_queue/_audio_queue и _stages напрямую.
-            out["pipeline"] = _safe(lambda: {
-                **(pipe.get_queue_sizes() or {}),
-                **(pipe.get_stage_status() or {}),
-            }, {})
+            #
+            # Каждый метод вызывается ОТДЕЛЬНО. Ранняя версия собирала всё
+            # одним выражением через распаковку `**`, но get_stage_status()
+            # возвращает СПИСОК, а не словарь — распаковка падала, _safe
+            # проглатывал исключение, и весь блок pipeline оказывался
+            # пустым. В логах это выглядело как «конвейера нет», хотя он
+            # работал: диагностика молча терялась целиком из-за одного
+            # несовместимого вызова.
+            #
+            # Раздельные вызовы дают частичный результат вместо пустого:
+            # сбой одного метода не уносит остальные.
+            pipeline_state = _safe(lambda: dict(pipe.get_queue_sizes() or {}), {})
+            stages = _safe(lambda: pipe.get_stage_status(), None)
+            if stages is not None:
+                # Метод отдаёт список словарей {name, alive}. Приводим к
+                # двум спискам — в таком виде снимок читается глазами и
+                # сравнивается между запусками.
+                try:
+                    pipeline_state["stages"] = [st.get("name") for st in stages]
+                    pipeline_state["stages_alive"] = [st.get("alive") for st in stages]
+                except Exception:
+                    pipeline_state["stages_raw"] = stages
+            out["pipeline"] = pipeline_state
 
             win = _safe(lambda: pipe.get_window_snapshot())
             if win is not None:

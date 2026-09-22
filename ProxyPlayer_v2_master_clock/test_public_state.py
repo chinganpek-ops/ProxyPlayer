@@ -125,14 +125,10 @@ def _stub_modules():
     sys.modules["utils.utils"].get_real_size = lambda p: 0
     sys.modules["utils.sync_logger"].sync_monitor_logger = logging.getLogger("stub")
 
-    class AC:
-        def __init__(self, *a, **k):
-            pass
-
-        def get_fast_forward_stride(self, speed):
-            return max(1, int(speed))
-
-    mod("pipeline.adaptive_chunk").AdaptiveChunkStrategy = AC
+    # pipeline.adaptive_chunk больше НЕ подменяется: это лёгкий модуль без
+    # внешних зависимостей, и настоящий импортируется вместе с планировщиком.
+    # Прежняя заглушка перекрывала реальный пакет pipeline и ломала импорт
+    # pipeline.stream_scheduler в проекте с пакетной раскладкой.
 
     import ctypes
     if not hasattr(ctypes, "windll"):
@@ -366,6 +362,8 @@ def make_clock():
     mc._max_queue_len = 0
     mc._stream = None
     mc._active = False
+    mc._max_future_lead = 48000
+    mc._stale_dropped = 0
     mc._device_available = True
     # Счётчики качества звука: заполняются в push_audio(). Раньше эти
     # измерения делала телеметрия, подменяя push_audio снаружи.

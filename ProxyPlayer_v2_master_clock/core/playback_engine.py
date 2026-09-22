@@ -534,26 +534,43 @@ class PlaybackEngine:
         # известны заранее и передаются в update_window() одним вызовом —
         # set_normal_mode вызывается ровно один раз, гонка исчезает.
         first = self._display_buffer.peek_first()
+        new_pts = None
         if first:
             pts, frame = first
+            new_pts = pts
             self._display_buffer.update_keep_last(frame, pts)
             with self._clock_lock:
                 self._audio_clock = pts
             self._current_frame_idx = pts_to_video_frame(pts)
-            if self._master_clock:
-                self._master_clock.set_clock(pts)
-                self._master_clock.flush_audio()
 
         local_chunk = (self._current_frame_idx - window.window_start_frame) // FRAMES_PER_CHUNK
 
-        # 5. Обновляем конвейер и планировщик — единым атомарным вызовом,
-        # сразу с правильным стартовым чанком (см. правку выше).
+        # 5. Переключение конвейера. ПОРЯДОК КРИТИЧЕН:
+        #
+        #   а) сначала новое окно — вместе с ним декодеры получают новый
+        #      PTS-фильтр и начинают отбрасывать пакеты старой позиции;
+        #   б) затем очистка очередей конвейера — выбрасываются пакеты,
+        #      уже прочитанные для старой позиции;
+        #   в) и ТОЛЬКО ПОСЛЕ ЭТОГО очистка звука и перестановка часов.
+        #
+        # Раньше (в) выполнялось первым. В промежутке до (а) и (б)
+        # непрерывно работающий декодер звука успевал дослать в
+        # MasterClock пакеты старой позиции — фильтр ещё был прежним и их
+        # пропускал. При перемотке НАЗАД такие пакеты оказывались далеко
+        # впереди новых часов, и выравнивающий микшер ждал их вечно:
+        # очередь звука не расходовалась, через 15-20 секунд вставал
+        # декодер звука, следом демуксер и видео. Теперь к моменту очистки
+        # звука источников устаревших данных уже не осталось.
         self._pipeline.update_window(window, start_local_chunk=local_chunk)
         self._pipeline.set_video_buffer(self._fill_buffer)
         try:
             self._pipeline.flush()
         except AttributeError:
             logger.warning("Метод flush() отсутствует в ChunkPipeline, пропускаем очистку очередей")
+
+        if new_pts is not None and self._master_clock:
+            self._master_clock.set_clock(new_pts)
+            self._master_clock.flush_audio()
         # Seek — это полная смена окна, поэтому LazyIndex.window должен
         # указывать на то же окно, что теперь активно в конвейере (при
         # скользящем окне эту синхронизацию делает shift_window()+
